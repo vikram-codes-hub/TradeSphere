@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+.venv/
+.env/
+ENV/
+
+# Environment variables
+.env
+
+# Trained models (large binary files)
+saved_models/*.pkl
+saved_models/*.joblib
+
+# Cached API data (regenerated automatically)
+data/*.csv
+data/*.json
+
+# Jupyter notebooks checkpoints
+notebooks/.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# Distribution
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
