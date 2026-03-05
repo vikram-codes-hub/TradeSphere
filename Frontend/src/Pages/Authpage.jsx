@@ -168,36 +168,33 @@ const Authpage = () => {
                   </button>
                 </div>
               </Field>
+              <Field
+                label=" Confirm Password"
+                right={isLogin && (
+                  <span style={styles.forgotLink}>Forgot password?</span>
+                )}
+              >
+                {!isLogin &&<div style={{ position: "relative" }}>
+                  <InputBox
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={form.password}
+                    onChange={handleChange}
+                    icon="🔒"
+                    extraPadding
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={styles.eyeBtn}
+                  >
+                    {showPassword ? "🙈" : "👁️"}
+                  </button>
+                </div>}
+              </Field>
 
-              {/* Role selector (signup only) */}
-              {!isLogin && (
-                <Field label="Account Type">
-                  <div style={styles.roleRow}>
-                    {[
-                      { value: "user",    label: "Free",    icon: "👤", desc: "Basic trading"    },
-                      { value: "premium", label: "Premium", icon: "⭐", desc: "AI predictions"   },
-                    ].map((r) => (
-                      <div
-                        key={r.value}
-                        onClick={() => setSelectedRole(r.value)}
-                        style={{
-                          ...styles.roleCard,
-                          borderColor: selectedRole === r.value
-                            ? "#2d7ef7"
-                            : "#1a2540",
-                          background: selectedRole === r.value
-                            ? "rgba(45,126,247,0.08)"
-                            : "#090e1a",
-                        }}
-                      >
-                        <span style={styles.roleIcon}>{r.icon}</span>
-                        <span style={styles.roleLabel}>{r.label}</span>
-                        <span style={styles.roleDesc}>{r.desc}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Field>
-              )}
+              
 
               {/* Submit */}
               <button
