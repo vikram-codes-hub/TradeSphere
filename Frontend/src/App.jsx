@@ -12,6 +12,14 @@ import UpgradePage from './Pages/Upgrade';
 import ProfilePage from './Pages/Profile';
 import Dashboard from './Pages/DashboardPage';
 import MarketsPage from './Pages/MarketPage';
+import LeaderboardPage from './Pages/LeaderboardPage';
+import WatchlistCard from './Components/Watchlist/Watchlistcard';
+import WatchlistPage from './Pages/Watchlist';
+import Footer from './Components/Utils/Footer';
+import PortfolioPage from './Pages/PortfolioPage';
+import PredictionsPage from './Pages/PredictionPage';
+import TradePage from './Pages/TradePage';
+import NotFoundPage from './Pages/NotFoundPage';
 
 const App = () => {
   return (
@@ -27,7 +35,14 @@ const App = () => {
 <Route path="/upgrade"       element={<UpgradePage />} />
 <Route path="/Dashboard"       element={<Dashboard/>} />
 <Route path="/market" element={<MarketsPage/>} />
+<Route path="/leaderboard" element={<LeaderboardPage/>} />
+<Route path="/watchlist" element={<WatchlistPage/>} />
+<Route path="/portfolio" element={<PortfolioPage/>} />
+<Route path="/predictions" element={<PredictionsPage/>} />
+<Route path="/trade/:symbol" element={<TradePage/>} />
+<Route path="*" element={<NotFoundPage/>} />
       </Routes>
+      <Footer/>
     </BrowserRouter>
   );
 };
