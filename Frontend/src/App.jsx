@@ -10,6 +10,8 @@ import AboutUs from './Pages/Aboutus';
 import ContactUs from './Pages/Contactus';
 import UpgradePage from './Pages/Upgrade';
 import ProfilePage from './Pages/Profile';
+import Dashboard from './Pages/DashboardPage';
+import MarketsPage from './Pages/MarketPage';
 
 const App = () => {
   return (
@@ -23,6 +25,8 @@ const App = () => {
 <Route path="/about"         element={<AboutUs />}     />
 <Route path="/contact"       element={<ContactUs />}   />
 <Route path="/upgrade"       element={<UpgradePage />} />
+<Route path="/Dashboard"       element={<Dashboard/>} />
+<Route path="/market" element={<MarketsPage/>} />
       </Routes>
     </BrowserRouter>
   );
