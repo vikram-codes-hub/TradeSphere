@@ -1,4 +1,6 @@
 import dotenv from "dotenv"
+import { seedStocks } from "./Services/Stockservice.js"
+import { initMarketSyncQueue, initMarketSyncWorker, triggerImmediateSync } from "./workers/marketSyncWorker.js";
 dotenv.config()
 
 import http from "http"
@@ -37,7 +39,14 @@ io.on("connection", (socket) => {
     })
 })
 
+
+await seedStocks();
+await initMarketSyncQueue(redisConnection);
+initMarketSyncWorker(redisConnection, redisClient, io);
+await triggerImmediateSync();
 // Start server
+
+
 const startServer = async () => {
     try {
         await connectDB()
