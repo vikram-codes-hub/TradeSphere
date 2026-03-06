@@ -26,7 +26,7 @@ const StockSchema = new mongoose.Schema(
       unique:    true,
       uppercase: true,
       trim:      true,
-      index:     true,
+   
     },
     companyName: {
       type:     String,

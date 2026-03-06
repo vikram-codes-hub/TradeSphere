@@ -15,10 +15,10 @@ import {
 
 const PORT = process.env.PORT || 5000;
 
-
+/* ── HTTP server ─────────────────────────────────────────── */
 const server = http.createServer(app);
 
-// /* ── Socket.IO
+/* ── Socket.IO ───────────────────────────────────────────── */
 const io = new Server(server, {
   cors: {
     origin:      process.env.CLIENT_URL || "http://localhost:5173",
@@ -27,67 +27,109 @@ const io = new Server(server, {
   },
 });
 
-//  io globally accessible so controllers can emit events
 global.io = io;
 
 io.on("connection", (socket) => {
-  console.log(`⚡ User connected: ${socket.id}`);
-
-  // Frontend calls: socket.emit("joinStockRoom", "TSLA")
-  // Must match marketSyncWorker: io.to(`stock:${symbol}`)
   socket.on("joinStockRoom", (symbol) => {
     socket.join(`stock:${symbol}`);
-    console.log(`📌 ${socket.id} joined room: stock:${symbol}`);
   });
-
   socket.on("leaveStockRoom", (symbol) => {
     socket.leave(`stock:${symbol}`);
   });
-
-  socket.on("disconnect", () => {
-    console.log(`❌ User disconnected: ${socket.id}`);
-  });
+  socket.on("disconnect", () => {});
 });
+
+/* ── Banner ──────────────────────────────────────────────── */
+const printBanner = ({ mongoHost, redisHost, stocks, port }) => {
+  const line  = "─".repeat(52);
+  const green = (t) => `\x1b[32m${t}\x1b[0m`;
+  const cyan  = (t) => `\x1b[36m${t}\x1b[0m`;
+  const bold  = (t) => `\x1b[1m${t}\x1b[0m`;
+  const dim   = (t) => `\x1b[2m${t}\x1b[0m`;
+  const yellow= (t) => `\x1b[33m${t}\x1b[0m`;
+
+  console.log(`
+${cyan("  ████████╗██████╗  █████╗ ██████╗ ███████╗")}
+${cyan("     ██╔══╝██╔══██╗██╔══██╗██╔══██╗██╔════╝")}
+${cyan("     ██║   ██████╔╝███████║██║  ██║█████╗  ")}
+${cyan("     ██║   ██╔══██╗██╔══██║██║  ██║██╔══╝  ")}
+${cyan("     ██║   ██║  ██║██║  ██║██████╔╝███████╗")}
+${cyan("     ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚══════╝")}
+${cyan("  ███████╗██████╗ ██╗  ██╗███████╗██████╗ ███████╗")}
+${cyan("  ██╔════╝██╔══██╗██║  ██║██╔════╝██╔══██╗██╔════╝")}
+${cyan("  ███████╗██████╔╝███████║█████╗  ██████╔╝█████╗  ")}
+${cyan("  ╚════██║██╔═══╝ ██╔══██║██╔══╝  ██╔══██╗██╔══╝  ")}
+${cyan("  ███████║██║     ██║  ██║███████╗██║  ██║███████╗")}
+${cyan("  ╚══════╝╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚══════╝")}
+
+  ${bold("TradeSphere")} ${dim("v1.0.0")}  ${yellow("[ Paper Trading Platform ]")}
+  ${line}
+  ${green("✅")} MongoDB   ${dim("→")} ${dim(mongoHost)}
+  ${green("✅")} Redis     ${dim("→")} ${dim(redisHost)}
+  ${green("✅")} Stocks    ${dim("→")} ${green(stocks + " symbols syncing")}
+  ${green("✅")} BullMQ   ${dim("→")} ${dim("market sync every 60s")}
+  ${green("✅")} Socket.IO ${dim("→")} ${dim("live price broadcast ready")}
+  ${line}
+  ${green("🚀")} ${bold("Server")}    ${dim("→")} http://localhost:${bold(port)}
+  ${green("📡")} ${bold("API Base")}  ${dim("→")} http://localhost:${bold(port)}/api
+  ${green("🏥")} ${bold("Health")}    ${dim("→")} http://localhost:${bold(port)}/api/health
+  ${line}
+  ${dim("Press Ctrl+C to stop")}
+`);
+};
 
 /* ── Start server ────────────────────────────────────────── */
 const startServer = async () => {
   try {
-    // 1. Connect MongoDB
-    await connectDB();
+    // Silence non-critical warnings during startup
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+      const msg = args[0]?.toString() || "";
+      if (msg.includes("IMPORTANT") || msg.includes("Eviction")) return;
+      originalWarn(...args);
+    };
 
-    // 2. Connect Redis — 
+    process.stdout.write("\x1Bc"); // clear terminal
+    console.log("\n  \x1b[2mStarting TradeSphere...\x1b[0m\n");
+
+    const mongo = await connectDB();
     const { redisClient, redisConnection } = await initRedis();
-
-    // 3. Seed stocks into DB if not already there
     await seedStocks();
-
-    // 4. Start BullMQ market sync queue
     await initMarketSyncQueue(redisConnection);
-
-    // 5. Start BullMQ worker — needs io for Socket.IO broadcasts
     initMarketSyncWorker(redisConnection, redisClient, io);
-
-    // 6. Trigger first sync immediately on startup
     await triggerImmediateSync();
 
-    // 7. Start HTTP server
+    // Restore console.warn after startup
+    console.warn = originalWarn;
+
     server.listen(PORT, () => {
-      console.log(`\n🚀 Server running on port ${PORT}`);
-      console.log(`📡 Socket.IO ready`);
-      console.log(`🔄 Market sync worker started\n`);
+      printBanner({
+        mongoHost:  process.env.MONGO_URI?.split("@")[1]?.split("/")[0] || "MongoDB Atlas",
+        redisHost:  process.env.REDIS_HOST?.split(".")[0] + ".redis-cloud" || "Redis Cloud",
+        stocks:     "14",
+        port:       PORT,
+      });
     });
 
   } catch (error) {
-    console.error("❌ Server startup error:", error);
+    console.error("\n\x1b[31m❌ Server startup failed:\x1b[0m", error.message);
     process.exit(1);
   }
 };
 
 /* ── Graceful shutdown ───────────────────────────────────── */
 process.on("SIGTERM", async () => {
-  console.log("⚠️  SIGTERM received — shutting down gracefully");
+  console.log("\n\x1b[33m⚠️  Shutting down gracefully...\x1b[0m");
   server.close(() => {
-    console.log("✅ HTTP server closed");
+    console.log("\x1b[32m✅ Server closed\x1b[0m");
+    process.exit(0);
+  });
+});
+
+process.on("SIGINT", async () => {
+  console.log("\n\x1b[33m⚠️  Shutting down gracefully...\x1b[0m");
+  server.close(() => {
+    console.log("\x1b[32m✅ Server closed\x1b[0m");
     process.exit(0);
   });
 });

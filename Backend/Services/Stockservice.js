@@ -2,7 +2,7 @@ import  YahooFinance from 'yahoo-finance2';
 import Stock             from "../Models/Stock.js";
 
 const yahooFinance = new YahooFinance({
-
+ suppressNotices: ['yahooSurvey'] 
  });
 
 /* ============================================================
@@ -18,7 +18,7 @@ export const TRACKED_STOCKS = [
   { symbol: "INFY.NS",       companyName: "Infosys",              exchange: "NSE",    sector: "Technology",    volatility: 1.0 },
   { symbol: "HDFCBANK.NS",   companyName: "HDFC Bank",            exchange: "NSE",    sector: "Banking",       volatility: 0.8 },
   { symbol: "WIPRO.NS",      companyName: "Wipro",                exchange: "NSE",    sector: "Technology",    volatility: 1.1 },
-  { symbol: "TATAMOTORS.NS", companyName: "Tata Motors",          exchange: "NSE",    sector: "Automobile",    volatility: 1.5 },
+ 
   { symbol: "ICICIBANK.NS",  companyName: "ICICI Bank",           exchange: "NSE",    sector: "Banking",       volatility: 0.9 },
   { symbol: "BAJFINANCE.NS", companyName: "Bajaj Finance",        exchange: "NSE",    sector: "Finance",       volatility: 1.3 },
   { symbol: "ADANIENT.NS",   companyName: "Adani Enterprises",    exchange: "NSE",    sector: "Conglomerate",  volatility: 1.8 },

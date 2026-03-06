@@ -43,7 +43,7 @@ app.get("/api/health", (req, res) => {
 });
 
 /* ── Routes (add here as you build them) ─────────────────── */
-// import authRoutes        from "./Routes/authRoutes.js";
+import authRoutes        from "./Routes/auth.routes.js";
 // import stockRoutes       from "./Routes/stockRoutes.js";
 // import tradeRoutes       from "./Routes/tradeRoutes.js";
 // import portfolioRoutes   from "./Routes/portfolioRoutes.js";
@@ -52,7 +52,7 @@ app.get("/api/health", (req, res) => {
 // import watchlistRoutes   from "./Routes/watchlistRoutes.js";
 // import adminRoutes       from "./Routes/adminRoutes.js";
 
-// app.use("/api/auth",        authRoutes);
+app.use("/api/auth",        authRoutes);
 // app.use("/api/stocks",      stockRoutes);
 // app.use("/api/trades",      tradeRoutes);
 // app.use("/api/portfolio",   portfolioRoutes);
