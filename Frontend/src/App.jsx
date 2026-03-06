@@ -20,6 +20,7 @@ import PortfolioPage from './Pages/PortfolioPage';
 import PredictionsPage from './Pages/PredictionPage';
 import TradePage from './Pages/TradePage';
 import NotFoundPage from './Pages/NotFoundPage';
+import AdminPage from './Pages/AdminPage';
 
 const App = () => {
   return (
@@ -41,6 +42,7 @@ const App = () => {
 <Route path="/predictions" element={<PredictionsPage/>} />
 <Route path="/trade/:symbol" element={<TradePage/>} />
 <Route path="*" element={<NotFoundPage/>} />
+<Route path="/admin" element={<AdminPage />} />
       </Routes>
       <Footer/>
     </BrowserRouter>
