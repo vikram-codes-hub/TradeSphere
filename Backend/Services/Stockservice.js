@@ -1,31 +1,35 @@
-import yahooFinance from "yahoo-finance2";
-import Stock   from "../Models/Stock.js";
+import  YahooFinance from 'yahoo-finance2';
+import Stock             from "../Models/Stock.js";
+
+const yahooFinance = new YahooFinance({
+
+ });
 
 /* ============================================================
    STOCK SERVICE
    Yahoo Finance fetching, MongoDB updates, Redis caching.
    ============================================================ */
 
-/* ── Stocks to track ─────────────────────────────────────── */
+/* ── Stocks to track ───────────────────────────────────────── */
 export const TRACKED_STOCKS = [
   // Indian stocks (NSE)
-  { symbol: "RELIANCE.NS",  companyName: "Reliance Industries",  exchange: "NSE",    sector: "Energy",       volatility: 1.2 },
-  { symbol: "TCS.NS",       companyName: "Tata Consultancy",     exchange: "NSE",    sector: "Technology",   volatility: 0.9 },
-  { symbol: "INFY.NS",      companyName: "Infosys",              exchange: "NSE",    sector: "Technology",   volatility: 1.0 },
-  { symbol: "HDFCBANK.NS",  companyName: "HDFC Bank",            exchange: "NSE",    sector: "Banking",      volatility: 0.8 },
-  { symbol: "WIPRO.NS",     companyName: "Wipro",                exchange: "NSE",    sector: "Technology",   volatility: 1.1 },
-  { symbol: "TATAMOTORS.NS",companyName: "Tata Motors",          exchange: "NSE",    sector: "Automobile",   volatility: 1.5 },
-  { symbol: "ICICIBANK.NS", companyName: "ICICI Bank",           exchange: "NSE",    sector: "Banking",      volatility: 0.9 },
-  { symbol: "BAJFINANCE.NS",companyName: "Bajaj Finance",        exchange: "NSE",    sector: "Finance",      volatility: 1.3 },
-  { symbol: "ADANIENT.NS",  companyName: "Adani Enterprises",    exchange: "NSE",    sector: "Conglomerate", volatility: 1.8 },
-  { symbol: "SUNPHARMA.NS", companyName: "Sun Pharmaceutical",   exchange: "NSE",    sector: "Pharma",       volatility: 1.0 },
+  { symbol: "RELIANCE.NS",   companyName: "Reliance Industries",  exchange: "NSE",    sector: "Energy",        volatility: 1.2 },
+  { symbol: "TCS.NS",        companyName: "Tata Consultancy",     exchange: "NSE",    sector: "Technology",    volatility: 0.9 },
+  { symbol: "INFY.NS",       companyName: "Infosys",              exchange: "NSE",    sector: "Technology",    volatility: 1.0 },
+  { symbol: "HDFCBANK.NS",   companyName: "HDFC Bank",            exchange: "NSE",    sector: "Banking",       volatility: 0.8 },
+  { symbol: "WIPRO.NS",      companyName: "Wipro",                exchange: "NSE",    sector: "Technology",    volatility: 1.1 },
+  { symbol: "TATAMOTORS.NS", companyName: "Tata Motors",          exchange: "NSE",    sector: "Automobile",    volatility: 1.5 },
+  { symbol: "ICICIBANK.NS",  companyName: "ICICI Bank",           exchange: "NSE",    sector: "Banking",       volatility: 0.9 },
+  { symbol: "BAJFINANCE.NS", companyName: "Bajaj Finance",        exchange: "NSE",    sector: "Finance",       volatility: 1.3 },
+  { symbol: "ADANIENT.NS",   companyName: "Adani Enterprises",    exchange: "NSE",    sector: "Conglomerate",  volatility: 1.8 },
+  { symbol: "SUNPHARMA.NS",  companyName: "Sun Pharmaceutical",   exchange: "NSE",    sector: "Pharma",        volatility: 1.0 },
 
   // US stocks
-  { symbol: "AAPL",         companyName: "Apple Inc.",           exchange: "NASDAQ", sector: "Technology",   volatility: 0.9 },
-  { symbol: "TSLA",         companyName: "Tesla Inc.",           exchange: "NASDAQ", sector: "Automobile",   volatility: 2.0 },
-  { symbol: "MSFT",         companyName: "Microsoft Corp.",      exchange: "NASDAQ", sector: "Technology",   volatility: 0.8 },
-  { symbol: "GOOGL",        companyName: "Alphabet Inc.",        exchange: "NASDAQ", sector: "Technology",   volatility: 1.0 },
-  { symbol: "AMZN",         companyName: "Amazon.com Inc.",      exchange: "NASDAQ", sector: "E-Commerce",   volatility: 1.1 },
+  { symbol: "AAPL",          companyName: "Apple Inc.",           exchange: "NASDAQ", sector: "Technology",    volatility: 0.9 },
+  { symbol: "TSLA",          companyName: "Tesla Inc.",           exchange: "NASDAQ", sector: "Automobile",    volatility: 2.0 },
+  { symbol: "MSFT",          companyName: "Microsoft Corp.",      exchange: "NASDAQ", sector: "Technology",    volatility: 0.8 },
+  { symbol: "GOOGL",         companyName: "Alphabet Inc.",        exchange: "NASDAQ", sector: "Technology",    volatility: 1.0 },
+  { symbol: "AMZN",          companyName: "Amazon.com Inc.",      exchange: "NASDAQ", sector: "E-Commerce",    volatility: 1.1 },
 ];
 
 /* ============================================================
@@ -55,7 +59,7 @@ export const seedStocks = async () => {
 };
 
 /* ============================================================
-   FETCH QUOTE — single stock from Yahoo Finance
+   FETCH QUOTE — single stock from Yahoo Finance v3
    ============================================================ */
 export const fetchQuote = async (symbol) => {
   try {
@@ -91,7 +95,6 @@ export const syncStock = async (symbol) => {
 
     const prevPrice = stock.currentPrice;
 
-    // Update from Yahoo Finance
     stock.currentPrice  = quoteData.currentPrice;
     stock.previousClose = quoteData.previousClose;
     stock.openPrice     = quoteData.openPrice;
@@ -104,12 +107,10 @@ export const syncStock = async (symbol) => {
     stock.lastSyncedAt  = new Date();
     stock.syncError     = null;
 
-    // Push to chart history
     if (quoteData.currentPrice > 0) {
       stock.pushPricePoint(quoteData.currentPrice, quoteData.volume);
     }
 
-    // Auto-resume halted stock if time expired
     const wasResumed = stock.checkAndResume();
 
     // Circuit breaker — halt if price moved >10%
@@ -148,7 +149,6 @@ export const syncAllStocks = async () => {
 
   console.log(`🔄 Syncing ${symbols.length} stocks...`);
 
-  // Batches of 5 — be polite to Yahoo Finance
   const BATCH_SIZE = 5;
   for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
     const batch = symbols.slice(i, i + BATCH_SIZE);
@@ -165,7 +165,6 @@ export const syncAllStocks = async () => {
       }
     });
 
-    // 500ms delay between batches
     if (i + BATCH_SIZE < symbols.length) {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }

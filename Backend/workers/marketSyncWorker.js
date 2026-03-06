@@ -1,10 +1,10 @@
-import { Worker, Queue, QueueScheduler } from "bullmq";
+import { Queue, Worker } from "bullmq";
 import { syncAllStocks, cacheStockPrice } from "../Services/Stockservice.js";
 
 /* ============================================================
    MARKET SYNC WORKER
-   BullMQ repeatable job — runs every 60 seconds.
-   Fetches prices → updates DB → caches Redis → broadcasts Socket.IO
+   BullMQ v3+ — QueueScheduler removed, no longer needed.
+   Repeatable jobs are handled by the Worker itself in v3+.
    ============================================================ */
 
 const QUEUE_NAME    = "market-sync";
@@ -13,17 +13,12 @@ const SYNC_INTERVAL = 60 * 1000; // 60 seconds
 
 let marketSyncQueue  = null;
 let marketSyncWorker = null;
-let marketScheduler  = null;
 
 /* ============================================================
-   INIT QUEUE — call once after Redis connects in server.js
+   INIT QUEUE
    ============================================================ */
 export const initMarketSyncQueue = async (redisConnection) => {
   try {
-    marketScheduler = new QueueScheduler(QUEUE_NAME, {
-      connection: redisConnection,
-    });
-
     marketSyncQueue = new Queue(QUEUE_NAME, {
       connection: redisConnection,
       defaultJobOptions: {
@@ -40,13 +35,13 @@ export const initMarketSyncQueue = async (redisConnection) => {
       await marketSyncQueue.removeRepeatableByKey(job.key);
     }
 
-    // Register repeatable job
+    // Register repeatable job — BullMQ v3+ syntax
     await marketSyncQueue.add(
       JOB_NAME,
       { triggeredAt: new Date().toISOString() },
       {
-        repeat: { every: SYNC_INTERVAL },
-        jobId:  "market-sync-repeatable",
+        repeat:  { every: SYNC_INTERVAL },
+        jobId:   "market-sync-repeatable",
       }
     );
 
@@ -59,7 +54,7 @@ export const initMarketSyncQueue = async (redisConnection) => {
 };
 
 /* ============================================================
-   INIT WORKER — call once in server.js with io + redisClient
+   INIT WORKER
    ============================================================ */
 export const initMarketSyncWorker = (redisConnection, redisClient, io) => {
   marketSyncWorker = new Worker(
@@ -169,7 +164,6 @@ export const shutdownMarketSync = async () => {
   try {
     if (marketSyncWorker) await marketSyncWorker.close();
     if (marketSyncQueue)  await marketSyncQueue.close();
-    if (marketScheduler)  await marketScheduler.close();
     console.log("✅ Market sync shutdown complete");
   } catch (err) {
     console.error("❌ Shutdown error:", err.message);
