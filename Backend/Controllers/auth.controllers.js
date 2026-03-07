@@ -32,7 +32,7 @@ const sendTokenResponse = (user, statusCode, res) => {
 
 //register new user
 
-export const register = async (req, res) => {
+export const register = async (req, res,next) => {
   try {
     const { name, email, password } = req.body;
 
@@ -60,7 +60,7 @@ export const register = async (req, res) => {
 };
 
 //Login user
-export const login = async (req, res) => {
+export const login = async (req, res,next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -95,7 +95,7 @@ export const login = async (req, res) => {
     user.lastLogin = new Date();
     await user.save({ validateBeforeSave: false });
     sendTokenResponse(user, 200, res);
-  } catch (error) {}
+  } catch (error) {next(error);}
 };
 
 //    Protected route to get current user profile
@@ -208,7 +208,7 @@ export const changePassword = async (req, res, next) => {
       .status(200)
       .json({ success: true, message: "Password changed successfully." });
   } catch (error) {
-    next(err);
+    next(error);
   }
 };
 
