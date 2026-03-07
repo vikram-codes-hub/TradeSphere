@@ -212,4 +212,4 @@ PredictionSchema.index({ "result.trend": 1, "result.pctChange": -1 });
 PredictionSchema.index({ symbol: 1, completedAt: -1 });
 
 const Prediction = mongoose.model("Prediction", PredictionSchema);
-module.exports = Prediction;
+export default Prediction;

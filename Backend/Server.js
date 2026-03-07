@@ -7,11 +7,26 @@ import { app }        from "./app.js";
 import { connectDB }  from "./Config/ConnectDB.js";
 import { initRedis }  from "./Config/redis.js";
 import { seedStocks } from "./Services/Stockservice.js";
+import { initSocket } from "./Socket/index.js";
+
+// Market sync
 import {
   initMarketSyncQueue,
   initMarketSyncWorker,
   triggerImmediateSync,
-} from "./workers/marketSyncWorker.js";
+} from "./Workers/marketSyncWorker.js";
+
+// New queues
+import { initPredictionQueue }  from "./Queue/prediction.queue.js";
+import { initLeaderboardQueue } from "./Queue/leaderboard.queue.js";
+import { initSettlementQueue }  from "./Queue/settlement.queue.js";
+import { initSimulationQueue }  from "./Queue/simulation.queue.js";
+
+// New workers
+import { initPredictionWorker }  from "./Workers/prediction.worker.js";
+import { initLeaderboardWorker } from "./Workers/leaderboard.worker.js";
+import { initSettlementWorker }  from "./Workers/settlement.worker.js";
+import { initSimulationWorker }  from "./Workers/simulation.worker.js";
 
 const PORT = process.env.PORT || 5000;
 
@@ -28,16 +43,7 @@ const io = new Server(server, {
 });
 
 global.io = io;
-
-io.on("connection", (socket) => {
-  socket.on("joinStockRoom", (symbol) => {
-    socket.join(`stock:${symbol}`);
-  });
-  socket.on("leaveStockRoom", (symbol) => {
-    socket.leave(`stock:${symbol}`);
-  });
-  socket.on("disconnect", () => {});
-});
+initSocket(io); // ← uses Socket/index.js instead of inline handlers
 
 /* ── Banner ──────────────────────────────────────────────── */
 const printBanner = ({ mongoHost, redisHost, stocks, port }) => {
@@ -64,11 +70,12 @@ ${cyan("  ╚══════╝╚═╝     ╚═╝  ╚═╝╚═══
 
   ${bold("TradeSphere")} ${dim("v1.0.0")}  ${yellow("[ Paper Trading Platform ]")}
   ${line}
-  ${green("✅")} MongoDB   ${dim("→")} ${dim(mongoHost)}
-  ${green("✅")} Redis     ${dim("→")} ${dim(redisHost)}
-  ${green("✅")} Stocks    ${dim("→")} ${green(stocks + " symbols syncing")}
-  ${green("✅")} BullMQ   ${dim("→")} ${dim("market sync every 60s")}
-  ${green("✅")} Socket.IO ${dim("→")} ${dim("live price broadcast ready")}
+  ${green("✅")} MongoDB    ${dim("→")} ${dim(mongoHost)}
+  ${green("✅")} Redis      ${dim("→")} ${dim(redisHost)}
+  ${green("✅")} Stocks     ${dim("→")} ${green(stocks + " symbols syncing")}
+  ${green("✅")} BullMQ    ${dim("→")} ${dim("5 queues active")}
+  ${green("✅")} Workers   ${dim("→")} ${dim("5 workers running")}
+  ${green("✅")} Socket.IO  ${dim("→")} ${dim("live price broadcast ready")}
   ${line}
   ${green("🚀")} ${bold("Server")}    ${dim("→")} http://localhost:${bold(port)}
   ${green("📡")} ${bold("API Base")}  ${dim("→")} http://localhost:${bold(port)}/api
@@ -89,25 +96,45 @@ const startServer = async () => {
       originalWarn(...args);
     };
 
-    process.stdout.write("\x1Bc"); // clear terminal
+    process.stdout.write("\x1Bc");
     console.log("\n  \x1b[2mStarting TradeSphere...\x1b[0m\n");
 
-    const mongo = await connectDB();
+    // 1. Connect MongoDB
+    await connectDB();
+
+    // 2. Connect Redis
     const { redisClient, redisConnection } = await initRedis();
+
+    // 3. Seed stocks
     await seedStocks();
+
+    // 4. Init all queues
     await initMarketSyncQueue(redisConnection);
+    await initPredictionQueue(redisConnection);
+    await initLeaderboardQueue(redisConnection);
+    await initSettlementQueue(redisConnection);
+    await initSimulationQueue(redisConnection);
+
+    // 5. Init all workers
     initMarketSyncWorker(redisConnection, redisClient, io);
+    initPredictionWorker(redisConnection);
+    initLeaderboardWorker(redisConnection);
+    initSettlementWorker(redisConnection);
+    initSimulationWorker(redisConnection);
+
+    // 6. Trigger immediate market sync
     await triggerImmediateSync();
 
-    // Restore console.warn after startup
+    // Restore console.warn
     console.warn = originalWarn;
 
+    // 7. Start HTTP server
     server.listen(PORT, () => {
       printBanner({
-        mongoHost:  process.env.MONGO_URI?.split("@")[1]?.split("/")[0] || "MongoDB Atlas",
-        redisHost:  process.env.REDIS_HOST?.split(".")[0] + ".redis-cloud" || "Redis Cloud",
-        stocks:     "14",
-        port:       PORT,
+        mongoHost: process.env.MONGO_URI?.split("@")[1]?.split("/")[0] || "MongoDB Atlas",
+        redisHost: process.env.REDIS_HOST?.split(".")[0] + ".redis-cloud" || "Redis Cloud",
+        stocks:    "14",
+        port:      PORT,
       });
     });
 
