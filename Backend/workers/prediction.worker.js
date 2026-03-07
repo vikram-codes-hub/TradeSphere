@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import Prediction  from "../Models/Prediction.js";
 import { QUEUE_NAMES } from "../Utils/constants.js";
-import axios from "axios";
+import { requestMLPrediction } from "../Services/mlBridge.service.js";
 
 let predictionWorker = null;
 
@@ -19,49 +19,53 @@ export const initPredictionWorker = (redisConnection) => {
         prediction.status = "PROCESSING";
         await prediction.save();
 
-        const mlResponse = await axios.post(
-          `${process.env.ML_SERVICE_URL}/predict`,
-          { symbol },
-          { timeout: 30000 }
-        );
+        // mlData is already unwrapped from { success, data: { ... } }
+        const mlData = await requestMLPrediction(symbol);
 
-        const mlData = mlResponse.data;
+        // ✅ camelCase keys matching prediction_service.py response
         prediction.complete({
-          predictedPrice: mlData.predicted_price,
+          predictedPrice: mlData.predictedPrice,
           trend:          mlData.trend,
-          pctChange:      mlData.pct_change,
+          pctChange:      mlData.pctChange,
           confidence:     mlData.confidence,
-          modelUsed:      mlData.model_used,
+          modelUsed:      mlData.modelUsed,
           rmse:           mlData.rmse,
           r2:             mlData.r2,
         });
 
-        if (mlData.price_history) {
-          prediction.priceHistory    = mlData.price_history;
-          prediction.inputDataPoints = mlData.price_history.length;
-        }
-
+        prediction.inputDataPoints = mlData.dataPoints || 0;
         await prediction.save();
 
-        // Notify user via Socket.IO
         global.io?.to(`user:${prediction.user}`).emit("prediction:ready", {
           predictionId: prediction._id,
           symbol,
-          status: "COMPLETED",
+          status:       "COMPLETED",
         });
 
-        console.log(`✅ Prediction complete for ${symbol}`);
+        console.log(`✅ Prediction complete for ${symbol} — ₹${mlData.currentPrice} → ₹${mlData.predictedPrice} (${mlData.trend})`);
+
       } catch (err) {
         prediction.fail(err.message);
         await prediction.save();
-        throw err;
+
+        global.io?.to(`user:${prediction.user}`).emit("prediction:failed", {
+          predictionId: prediction._id,
+          symbol,
+          error:        err.message,
+        });
+
+        throw err; // let BullMQ handle retry
       }
     },
     { connection: redisConnection, concurrency: 3 }
   );
 
-  predictionWorker.on("completed", (job) => console.log(`✅ Prediction job ${job.id} done`));
-  predictionWorker.on("failed",    (job, err) => console.error(`❌ Prediction job ${job?.id} failed:`, err.message));
+  predictionWorker.on("completed", (job) =>
+    console.log(`✅ Prediction job ${job.id} done`)
+  );
+  predictionWorker.on("failed", (job, err) =>
+    console.error(`❌ Prediction job ${job?.id} failed:`, err.message)
+  );
 
   console.log("✅ Prediction worker started");
   return predictionWorker;
