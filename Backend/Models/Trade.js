@@ -1,74 +1,68 @@
 import mongoose from "mongoose";
 
-const TradeSchema = new mongoose.Schema(
+const tradeSchema = new mongoose.Schema(
   {
-    // References to the matched orders
-    buyOrderId: {
-      type:     mongoose.Schema.Types.ObjectId,
-      ref:      "Order",
-      required: true,
-    },
-
-    sellOrderId: {
-      type:     mongoose.Schema.Types.ObjectId,
-      ref:      "Order",
-      required: true,
-    },
-
-    // Buyer and seller user IDs
-    buyerId: {
+    user: {
       type:     mongoose.Schema.Types.ObjectId,
       ref:      "User",
       required: true,
       index:    true,
     },
 
-    sellerId: {
-      type:     mongoose.Schema.Types.ObjectId,
-      ref:      "User",
+    symbol: {
+      type:     String,
       required: true,
-      index:    true,
+      uppercase:true,
+      trim:     true,
     },
 
-    stockSymbol: {
-      type:      String,
-      required:  true,
-      uppercase: true,
-      trim:      true,
-      index:     true,
+    companyName: {
+      type:    String,
+      default: "",
     },
 
-    // Price at which the trade was executed (in paise)
-    executedPrice: {
-      type:     Number,
+    type: {
+      type:     String,
+      enum:     ["BUY", "SELL"],
       required: true,
-      min:      [1, "Executed price must be positive"],
     },
 
-    // Number of shares exchanged
     quantity: {
       type:     Number,
       required: true,
-      min:      [1, "Quantity must be at least 1"],
+      min:      1,
     },
 
-    // Total trade value in paise = executedPrice * quantity
-    totalValue: {
-      type:    Number,
+    price: {
+      type:     Number,
+      required: true,
+      min:      0,
+    },
+
+    totalAmount: {
+      type:     Number,
       required: true,
     },
 
-    // Was this a market or limit order match
-    tradeType: {
-      type:    String,
-      enum:    ["market-market", "market-limit", "limit-limit"],
-      default: "limit-limit",
+    // Only populated on SELL trades
+    avgBuyPrice: {
+      type:    Number,
+      default: 0,
     },
 
-    executedAt: {
-      type:    Date,
-      default: Date.now,
-      index:   true,
+    pnl: {
+      type:    Number,
+      default: 0,
+    },
+
+    pnlPct: {
+      type:    Number,
+      default: 0,
+    },
+
+    balanceAfter: {
+      type:    Number,
+      default: 0,
     },
   },
   {
@@ -76,37 +70,9 @@ const TradeSchema = new mongoose.Schema(
   }
 );
 
-// ── Indexes ───────────────────────────────────────────────────
-TradeSchema.index({ stockSymbol: 1, executedAt: -1 });
-TradeSchema.index({ buyerId:  1,   executedAt: -1 });
-TradeSchema.index({ sellerId: 1,   executedAt: -1 });
+// Index for fast user trade history queries
+tradeSchema.index({ user: 1, createdAt: -1 });
+tradeSchema.index({ user: 1, symbol: 1  });
 
-// ── Virtual: total value in rupees ────────────────────────────
-TradeSchema.virtual("totalValueInRupees").get(function () {
-  return this.totalValue / 100;
-});
-
-// ── Virtual: executed price in rupees ─────────────────────────
-TradeSchema.virtual("executedPriceInRupees").get(function () {
-  return this.executedPrice / 100;
-});
-
-// ── Static: get recent trades for a stock ────────────────────
-TradeSchema.statics.getRecentTrades = function (symbol, limit = 20) {
-  return this.find({ stockSymbol: symbol })
-    .sort({ executedAt: -1 })
-    .limit(limit)
-    .populate("buyerId",  "name")
-    .populate("sellerId", "name");
-};
-
-// ── Static: get user trade history ───────────────────────────
-TradeSchema.statics.getUserTrades = function (userId, limit = 50) {
-  return this.find({
-    $or: [{ buyerId: userId }, { sellerId: userId }],
-  })
-    .sort({ executedAt: -1 })
-    .limit(limit);
-};
-
-export default mongoose.model("Trade", TradeSchema);
+const Trade = mongoose.model("Trade", tradeSchema);
+export default Trade;
