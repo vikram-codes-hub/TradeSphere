@@ -7,7 +7,7 @@ import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 /* ── General API limiter ───────────────────────────────────── */
 export const apiLimiter = rateLimit({
-  windowMs:        15 * 60 * 1000,
+  windowMs:       0,           // 15 * 60 * 1000,
   max:             100,
   standardHeaders: true,
   legacyHeaders:   false,
@@ -19,7 +19,7 @@ export const apiLimiter = rateLimit({
 
 /* ── Auth limiter ──────────────────────────────────────────── */
 export const authLimiter = rateLimit({
-  windowMs:               15 * 60 * 1000,
+  windowMs:              0,              // 15 * 60 * 1000,
   max:                    10,
   standardHeaders:        true,
   legacyHeaders:          false,

@@ -21,6 +21,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
+    // console.log(token)
     if (!token) {
       setLoading(false);
       return;

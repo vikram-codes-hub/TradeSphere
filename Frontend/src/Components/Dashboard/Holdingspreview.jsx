@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
-import { useDashboard } from "../../Context/DashboardContext";
+import { useDashboard } from "../../Context/Dashboardcontext";
+
 
 const th = {
   fontSize: "10px", fontWeight: "600", color: "#64748b",

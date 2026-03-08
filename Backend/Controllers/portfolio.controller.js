@@ -67,9 +67,9 @@ export const getPortfolio = async (req, res, next) => {
 };
 
 /* ============================================================
-   GET PORTFOLIO SUMMARY (lightweight — for dashboard widget)
-   GET /api/portfolio/summary
+   REPLACE ONLY getPortfolioSummary in portfolio.controller.js
    ============================================================ */
+
 export const getPortfolioSummary = async (req, res, next) => {
   try {
     const holdings    = await Portfolio.find({ user: req.user._id });
@@ -79,7 +79,7 @@ export const getPortfolioSummary = async (req, res, next) => {
     let totalInvestedValue = 0;
 
     for (const h of holdings) {
-      const livePrice = await getStockPrice(redisClient, h.symbol) || h.avgBuyPrice;
+      const livePrice     = await getStockPrice(redisClient, h.symbol) || h.avgBuyPrice;
       totalCurrentValue  += livePrice * h.quantity;
       totalInvestedValue += h.avgBuyPrice * h.quantity;
     }
@@ -87,26 +87,42 @@ export const getPortfolioSummary = async (req, res, next) => {
     totalCurrentValue  = parseFloat(totalCurrentValue.toFixed(2));
     totalInvestedValue = parseFloat(totalInvestedValue.toFixed(2));
     const unrealisedPnl = parseFloat((totalCurrentValue - totalInvestedValue).toFixed(2));
+    const netWorth      = parseFloat((req.user.cashBalance + totalCurrentValue).toFixed(2));
+    const deposited     = req.user.totalDeposited ?? 100000;
 
     res.status(200).json({
       success: true,
       summary: {
-        holdingsCount:  holdings.length,
+        // portfolio
+        holdingsCount:      holdings.length,
         totalCurrentValue,
         totalInvestedValue,
         unrealisedPnl,
-        unrealisedPct:  totalInvestedValue > 0
+        unrealisedPct:      totalInvestedValue > 0
           ? parseFloat(((unrealisedPnl / totalInvestedValue) * 100).toFixed(2))
           : 0,
-        cashBalance:    req.user.cashBalance,
-        netWorth:       parseFloat((req.user.cashBalance + totalCurrentValue).toFixed(2)),
+
+        // account
+        cashBalance:        req.user.cashBalance,
+        netWorth,
+        totalDeposited:     deposited,
+        totalPnlPct:        deposited > 0
+          ? parseFloat(((netWorth - deposited) / deposited * 100).toFixed(2))
+          : 0,
+
+        // user stats
+        totalTrades:        req.user.totalTrades   ?? 0,
+        winningTrades:      req.user.winningTrades ?? 0,
+        winRate:            req.user.totalTrades > 0
+          ? parseFloat(((req.user.winningTrades / req.user.totalTrades) * 100).toFixed(2))
+          : 0,
+        totalPnl:           req.user.totalPnl      ?? 0,
       },
     });
   } catch (err) {
     next(err);
   }
 };
-
 /* ============================================================
    GET SINGLE HOLDING
    GET /api/portfolio/:symbol
