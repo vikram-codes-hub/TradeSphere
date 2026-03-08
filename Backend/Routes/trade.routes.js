@@ -5,9 +5,10 @@ import {
   getTradeHistory,
   getTrade,
   getTradeStats,
-} from "../Controllers/tradeController.js";
-import { protect }      from "../Middleware/authMiddleware.js";
+} from "../Controllers/trade.controllers.js";
+import { protect } from "../Middleware/auth.middleware.js";
 import { tradeLimiter } from "../Middleware/rateLimiter.js";
+
 
 const router = express.Router();
 

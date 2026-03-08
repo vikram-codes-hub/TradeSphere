@@ -1,6 +1,6 @@
 import api from "./api.js";
 
-export const portfolioService = {
+ const portfolioService = {
 
   getPortfolio: async () => {
     const res = await api.get("/portfolio");
@@ -27,3 +27,5 @@ export const portfolioService = {
     return res.data;
   },
 };
+
+export default portfolioService;

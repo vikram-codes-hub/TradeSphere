@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import portfolioService from "../services/portfolioService";
-import stockService     from "../services/stockService";
-import tradeService     from "../services/tradeService";
-import watchlistService from "../services/watchlistService";
+import portfolioService from "../Services/portfolioService"
+import {stockService} from "../Services/stockService"
+import {tradeService}     from "../services/tradeService";
+import {watchlistService} from "../services/watchlistService";
 import { useAuth }      from "./AuthContext";
 
 const DashboardContext = createContext(null);

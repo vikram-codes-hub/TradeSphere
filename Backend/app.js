@@ -44,22 +44,22 @@ app.get("/api/health", (req, res) => {
 
 /* ── Routes (add here as you build them) ─────────────────── */
 import authRoutes        from "./Routes/auth.routes.js";
-// import stockRoutes       from "./Routes/stockRoutes.js";
-// import tradeRoutes       from "./Routes/tradeRoutes.js";
-// import portfolioRoutes   from "./Routes/portfolioRoutes.js";
-// import predictionRoutes  from "./Routes/predictionRoutes.js";
-// import leaderboardRoutes from "./Routes/leaderboardRoutes.js";
-// import watchlistRoutes   from "./Routes/watchlistRoutes.js";
-// import adminRoutes       from "./Routes/adminRoutes.js";
+import stockRoutes from "./Routes/stock.routes.js";
+import router from "./Routes/trade.routes.js"
+import portfolioRoutes from "./Routes/Portfolio.routes.js";
+import predictionRoutes from "./Routes/Prediction.routes.js";
+import leaderboardRoutes from "./Routes/Leaderboard.routes.js";
+import watchlistRoutes from "./Routes/Watchlistroutes.routes.js";
+import adminRoutes from "./Routes/admin.routes.js";
 
 app.use("/api/auth",        authRoutes);
-// app.use("/api/stocks",      stockRoutes);
-// app.use("/api/trades",      tradeRoutes);
-// app.use("/api/portfolio",   portfolioRoutes);
-// app.use("/api/predict",     predictionRoutes);
-// app.use("/api/leaderboard", leaderboardRoutes);
-// app.use("/api/watchlist",   watchlistRoutes);
-// app.use("/api/admin",       adminRoutes);
+app.use("/api/stocks",      stockRoutes);
+app.use("/api/trades",      router);
+app.use("/api/portfolio",   portfolioRoutes);
+app.use("/api/predict",     predictionRoutes);
+app.use("/api/leaderboard", leaderboardRoutes);
+app.use("/api/watchlist",   watchlistRoutes);
+app.use("/api/admin",       adminRoutes);
 
 /* ── Error handlers — MUST be last ──────────────────────── */
 app.use(notFound);      // catches unknown routes → 404

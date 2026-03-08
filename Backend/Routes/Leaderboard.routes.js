@@ -1,10 +1,13 @@
 import express from "express";
-import { getLeaderboard, getMyRank } from "../Controllers/leaderboardController.js";
-import { protect } from "../Middleware/authMiddleware.js";
+import {
+  getLeaderboard,
+  getMyRank,
+} from "../Controllers/leaderboard.controller.js";
+import { protect } from "../Middleware/auth.middleware.js";
 
-const router = express.Router();
+const leaderboardRoutes = express.Router();
 
-router.get("/",   getLeaderboard);          // GET /api/leaderboard
-router.get("/me", protect, getMyRank);      // GET /api/leaderboard/me
+leaderboardRoutes.get("/",   getLeaderboard);          // GET /api/leaderboard
+leaderboardRoutes.get("/me", protect, getMyRank);      // GET /api/leaderboard/me
 
-export default router;
+export default leaderboardRoutes;
