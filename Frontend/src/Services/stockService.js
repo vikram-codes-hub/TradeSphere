@@ -3,8 +3,13 @@ import api from "./api.js";
 export const stockService = {
 
   getAllStocks: async (params = {}) => {
-    // params: { sector, exchange, search, sort }
     const res = await api.get("/stocks", { params });
+    return res.data;
+  },
+
+  // Live search — hits Yahoo Finance and auto-seeds DB
+  searchStocks: async (q) => {
+    const res = await api.get("/stocks/search", { params: { q } });
     return res.data;
   },
 

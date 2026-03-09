@@ -1,24 +1,29 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import { stockService }   from "../services/stockService";
+import { stockService }     from "../services/stockService";
 import { watchlistService } from "../services/watchlistService";
-import { useSocket }      from "../hooks/useSocket";
+import { useSocket }        from "../hooks/useSocket";
 
 const MarketsContext = createContext(null);
+const PAGE_SIZE = 20;
 
 export const MarketsProvider = ({ children }) => {
   const socket = useSocket();
 
-  const [stocks,     setStocks]     = useState([]);
-  const [watchlist,  setWatchlist]  = useState([]); // symbols user has saved
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState(null);
-  const [lastUpdated,setLastUpdated]= useState(null);
+  const [allStocks,   setAllStocks]   = useState([]);
+  const [watchlist,   setWatchlist]   = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [searching,   setSearching]   = useState(false);
+  const [error,       setError]       = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [page,        setPage]        = useState(1); // pagination
 
   // ── Filters ───────────────────────────────────────────
-  const [search,  setSearch]  = useState("");
-  const [sector,  setSector]  = useState("All");
-  const [exchange,setExchange]= useState("All");
-  const [sortBy,  setSortBy]  = useState("name"); // name | price | change | volume
+  const [search,   setSearch]   = useState("");
+  const [exchange, setExchange] = useState("All");
+  const [sortBy,   setSortBy]   = useState("marketCap");
+
+  // reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [search, exchange, sortBy]);
 
   // ── Fetch all stocks ──────────────────────────────────
   const fetchStocks = useCallback(async () => {
@@ -26,7 +31,7 @@ export const MarketsProvider = ({ children }) => {
     setError(null);
     try {
       const res = await stockService.getAllStocks();
-      setStocks(res?.stocks ?? []);
+      setAllStocks(res?.stocks ?? []);
       setLastUpdated(new Date());
     } catch (err) {
       setError("Failed to load stocks.");
@@ -35,10 +40,9 @@ export const MarketsProvider = ({ children }) => {
     }
   }, []);
 
-  // ── Fetch watchlist symbols ───────────────────────────
   const fetchWatchlist = useCallback(async () => {
     try {
-      const res = await watchlistService.getWatchlist();
+      const res     = await watchlistService.getWatchlist();
       const symbols = (res?.watchlist ?? []).map(w => w.symbol ?? w);
       setWatchlist(symbols);
     } catch (_) {}
@@ -49,108 +53,99 @@ export const MarketsProvider = ({ children }) => {
     fetchWatchlist();
   }, [fetchStocks, fetchWatchlist]);
 
-  // ── Socket — live price updates ───────────────────────
+  // ── Live search with debounce ─────────────────────────
+  const searchTimer = useRef(null);
+
+  const handleSearchChange = useCallback((value) => {
+    setSearch(value);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!value.trim() || value.trim().length < 2) return;
+
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res       = await stockService.searchStocks(value.trim());
+        const newStocks = res?.stocks ?? [];
+        setAllStocks(prev => {
+          const existingSymbols = new Set(prev.map(s => s.symbol));
+          const toAdd           = newStocks.filter(s => !existingSymbols.has(s.symbol));
+          return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+        });
+      } catch (_) {}
+      finally { setSearching(false); }
+    }, 500);
+  }, []);
+
+  // ── Socket live updates ───────────────────────────────
   useEffect(() => {
     if (!socket) return;
-
-    const handlePriceUpdate = (data) => {
-      // data: { symbol, price, change, changePercent, volume }
-      setStocks(prev =>
-        prev.map(s =>
-          s.symbol === data.symbol
-            ? { ...s, currentPrice: data.price, change: data.change, changePercent: data.changePercent, volume: data.volume ?? s.volume }
-            : s
-        )
-      );
+    const onPrice = ({ symbol, price, change, changePercent, volume }) => {
+      setAllStocks(prev => prev.map(s =>
+        s.symbol === symbol
+          ? { ...s, currentPrice: price, priceChange: change, priceChangePct: changePercent, volume: volume ?? s.volume }
+          : s
+      ));
     };
-
-    const handleHalt = ({ symbol }) => {
-      setStocks(prev =>
-        prev.map(s => s.symbol === symbol ? { ...s, isHalted: true } : s)
-      );
-    };
-
-    const handleResume = ({ symbol }) => {
-      setStocks(prev =>
-        prev.map(s => s.symbol === symbol ? { ...s, isHalted: false } : s)
-      );
-    };
-
-    socket.on("price:update",  handlePriceUpdate);
-    socket.on("stock:halted",  handleHalt);
-    socket.on("stock:resumed", handleResume);
-
-    return () => {
-      socket.off("price:update",  handlePriceUpdate);
-      socket.off("stock:halted",  handleHalt);
-      socket.off("stock:resumed", handleResume);
-    };
+    socket.on("price:update",  onPrice);
+    socket.on("stock:halted",  ({ symbol }) => setAllStocks(prev => prev.map(s => s.symbol === symbol ? { ...s, isHalted: true  } : s)));
+    socket.on("stock:resumed", ({ symbol }) => setAllStocks(prev => prev.map(s => s.symbol === symbol ? { ...s, isHalted: false } : s)));
+    return () => { socket.off("price:update", onPrice); socket.off("stock:halted"); socket.off("stock:resumed"); };
   }, [socket]);
 
   // ── Watchlist toggle ──────────────────────────────────
   const toggleWatchlist = useCallback(async (symbol) => {
-    const isInWatchlist = watchlist.includes(symbol);
-    // Optimistic update
-    setWatchlist(prev =>
-      isInWatchlist ? prev.filter(s => s !== symbol) : [...prev, symbol]
-    );
+    const inList = watchlist.includes(symbol);
+    setWatchlist(prev => inList ? prev.filter(s => s !== symbol) : [...prev, symbol]);
     try {
-      if (isInWatchlist) {
-        await watchlistService.removeFromWatchlist(symbol);
-      } else {
-        await watchlistService.addToWatchlist(symbol);
-      }
+      if (inList) await watchlistService.removeFromWatchlist(symbol);
+      else        await watchlistService.addToWatchlist(symbol);
     } catch (_) {
-      // Revert on failure
-      setWatchlist(prev =>
-        isInWatchlist ? [...prev, symbol] : prev.filter(s => s !== symbol)
-      );
+      setWatchlist(prev => inList ? [...prev, symbol] : prev.filter(s => s !== symbol));
     }
   }, [watchlist]);
 
-  // ── Derived — filtered + sorted stocks ───────────────
-  const filteredStocks = stocks
+  // ── Derived — filtered + sorted ───────────────────────
+  const filteredStocks = allStocks
     .filter(s => {
-      const q = search.toLowerCase();
-      const matchSearch   = !q || s.symbol.toLowerCase().includes(q) || s.name?.toLowerCase().includes(q);
-      const matchSector   = sector   === "All" || s.sector   === sector;
-      const matchExchange = exchange === "All" || s.exchange === exchange;
-      return matchSearch && matchSector && matchExchange;
+      const q           = search.toLowerCase();
+      const matchSearch = !q || s.symbol.toLowerCase().includes(q) || (s.companyName ?? s.name ?? "").toLowerCase().includes(q);
+      const matchEx     = exchange === "All" || s.exchange === exchange;
+      return matchSearch && matchEx;
     })
     .sort((a, b) => {
       switch (sortBy) {
-        case "price":   return (b.currentPrice  ?? 0) - (a.currentPrice  ?? 0);
-        case "change":  return (b.changePercent ?? 0) - (a.changePercent ?? 0);
-        case "volume":  return (b.volume        ?? 0) - (a.volume        ?? 0);
-        case "name":
-        default:        return (a.symbol ?? "").localeCompare(b.symbol ?? "");
+        case "price":     return (b.currentPrice  ?? 0) - (a.currentPrice  ?? 0);
+        case "change":    return (b.priceChangePct ?? b.changePercent ?? 0) - (a.priceChangePct ?? a.changePercent ?? 0);
+        case "volume":    return (b.volume         ?? 0) - (a.volume         ?? 0);
+        case "marketCap": return (b.marketCap      ?? 0) - (a.marketCap      ?? 0);
+        default:          return (a.symbol ?? "").localeCompare(b.symbol ?? "");
       }
     });
 
-  // ── Derived — unique sectors + exchanges ──────────────
-  const sectors   = ["All", ...new Set(stocks.map(s => s.sector).filter(Boolean))];
-  const exchanges = ["All", ...new Set(stocks.map(s => s.exchange).filter(Boolean))];
+  // ── Paginated slice ───────────────────────────────────
+  const stocks     = filteredStocks.slice(0, page * PAGE_SIZE);
+  const hasMore    = stocks.length < filteredStocks.length;
+  const loadMore   = () => setPage(p => p + 1);
+  const exchanges  = ["All", ...new Set(allStocks.map(s => s.exchange).filter(Boolean))];
 
   return (
     <MarketsContext.Provider value={{
-      // data
-      stocks: filteredStocks,
-      allStocks: stocks,
+      stocks,               // paginated
+      allStocks,            // full list
+      filteredStocks,       // filtered but not paginated (for count)
       watchlist,
-      sectors,
       exchanges,
       loading,
+      searching,
       error,
       lastUpdated,
-
-      // filters
-      search,  setSearch,
-      sector,  setSector,
-      exchange,setExchange,
-      sortBy,  setSortBy,
-
-      // actions
-      refresh:         fetchStocks,
+      hasMore,
+      loadMore,
+      page,
+      search,    setSearch: handleSearchChange,
+      exchange,  setExchange,
+      sortBy,    setSortBy,
+      refresh:        fetchStocks,
       toggleWatchlist,
     }}>
       {children}
