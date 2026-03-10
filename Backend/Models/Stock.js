@@ -1,12 +1,5 @@
 import mongoose from "mongoose";
 
-/* ============================================================
-   STOCK MODEL
-   Slim model — Yahoo Finance handles raw data.
-   This stores your app's stock list + cached live state.
-   ============================================================ */
-
-/* ── Price point sub-schema (for chart) ─────────────────── */
 const PricePointSchema = new mongoose.Schema(
   {
     price:     { type: Number, required: true },
@@ -16,38 +9,18 @@ const PricePointSchema = new mongoose.Schema(
   { _id: false }
 );
 
-/* ── Main Stock schema ───────────────────────────────────── */
 const StockSchema = new mongoose.Schema(
   {
-    /* ── Identity ─────────────────────────────────────────── */
     symbol: {
-      type:      String,
-      required:  true,
-      unique:    true,
-      uppercase: true,
-      trim:      true,
-   
+      type: String, required: true, unique: true, uppercase: true, trim: true,
     },
-    companyName: {
-      type:     String,
-      required: true,
-      trim:     true,
-    },
+    companyName: { type: String, required: true, trim: true },
     exchange: {
-      type:    String,
-      enum:    ["NSE", "BSE", "NASDAQ", "NYSE", "OTHER"],
-      default: "NSE",
+      type: String, enum: ["NSE", "BSE", "NASDAQ", "NYSE", "OTHER"], default: "NSE",
     },
-    sector: {
-      type:    String,
-      default: "Unknown",
-    },
-    logoUrl: {
-      type:    String,
-      default: "",
-    },
+    sector:  { type: String, default: "Unknown" },
+    logoUrl: { type: String, default: ""        },
 
-    /* ── Live Price (cached from Yahoo Finance) ───────────── */
     currentPrice:  { type: Number, default: 0 },
     previousClose: { type: Number, default: 0 },
     openPrice:     { type: Number, default: 0 },
@@ -58,65 +31,36 @@ const StockSchema = new mongoose.Schema(
     weekHigh52:    { type: Number, default: 0 },
     weekLow52:     { type: Number, default: 0 },
 
-    /* ── Price History (last 90 points for chart) ─────────── */
-    priceHistory: {
-      type:    [PricePointSchema],
-      default: [],
-    },
+    // ✅ Stored directly — NOT virtuals
+    // Yahoo's regularMarketChange/regularMarketChangePercent are always
+    // correct even outside market hours, unlike currentPrice-previousClose
+    priceChange:    { type: Number, default: 0 },
+    priceChangePct: { type: Number, default: 0 },
 
-    /* ── Circuit Breaker ──────────────────────────────────── */
+    priceHistory: { type: [PricePointSchema], default: [] },
+
     isHalted:    { type: Boolean, default: false, index: true },
     haltedAt:    { type: Date,    default: null  },
     haltedUntil: { type: Date,    default: null  },
     haltReason:  { type: String,  default: null  },
 
-    /* ── App Config ───────────────────────────────────────── */
-    isActive: {
-      type:    Boolean,
-      default: true,
-      index:   true,
-    },
-    volatilityFactor: {
-      type:    Number,
-      default: 1.0,
-      min:     0.1,
-      max:     2.0,
-    },
+    isActive:         { type: Boolean, default: true, index: true },
+    volatilityFactor: { type: Number,  default: 1.0,  min: 0.1, max: 2.0 },
 
-    /* ── Sync Tracking ────────────────────────────────────── */
     lastSyncedAt: { type: Date,   default: null },
     syncError:    { type: String, default: null },
   },
   {
     timestamps: true,
-    toJSON:     { virtuals: true },
-    toObject:   { virtuals: true },
+    toJSON:   { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
-/* ============================================================
-   VIRTUALS
-   ============================================================ */
-
-StockSchema.virtual("priceChange").get(function () {
-  if (!this.previousClose || this.previousClose === 0) return 0;
-  return parseFloat((this.currentPrice - this.previousClose).toFixed(2));
-});
-
-StockSchema.virtual("priceChangePct").get(function () {
-  if (!this.previousClose || this.previousClose === 0) return 0;
-  return parseFloat(
-    (((this.currentPrice - this.previousClose) / this.previousClose) * 100).toFixed(2)
-  );
-});
-
+// ✅ Only non-price virtuals remain
 StockSchema.virtual("isTradeable").get(function () {
   return this.isActive && !this.isHalted;
 });
-
-/* ============================================================
-   INSTANCE METHODS
-   ============================================================ */
 
 StockSchema.methods.pushPricePoint = function (price, volume = 0) {
   this.priceHistory.push({ price, volume, timestamp: new Date() });
@@ -147,13 +91,9 @@ StockSchema.methods.checkAndResume = function () {
   return false;
 };
 
-/* ============================================================
-   STATIC METHODS
-   ============================================================ */
-
 StockSchema.statics.getActive = function () {
   return this.find({ isActive: true }).select(
-    "symbol companyName exchange currentPrice previousClose volume marketCap isHalted sector"
+    "symbol companyName exchange currentPrice previousClose priceChange priceChangePct volume marketCap isHalted sector"
   );
 };
 
@@ -161,9 +101,6 @@ StockSchema.statics.getBySymbol = function (symbol) {
   return this.findOne({ symbol: symbol.toUpperCase() });
 };
 
-/* ============================================================
-   INDEXES
-   ============================================================ */
 StockSchema.index({ symbol: 1 });
 StockSchema.index({ isActive: 1, isHalted: 1 });
 StockSchema.index({ exchange: 1 });

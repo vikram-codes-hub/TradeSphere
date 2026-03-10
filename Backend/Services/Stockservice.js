@@ -1,30 +1,19 @@
-import  YahooFinance from 'yahoo-finance2';
-import Stock             from "../Models/Stock.js";
+import YahooFinance from 'yahoo-finance2';
+import Stock         from "../Models/Stock.js";
 
-const yahooFinance = new YahooFinance({
- suppressNotices: ['yahooSurvey'] 
- });
-
-/* ============================================================
-   STOCK SERVICE
-   Yahoo Finance fetching, MongoDB updates, Redis caching.
-   ============================================================ */
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 /* ── Stocks to track ───────────────────────────────────────── */
 export const TRACKED_STOCKS = [
-  // Indian stocks (NSE)
   { symbol: "RELIANCE.NS",   companyName: "Reliance Industries",  exchange: "NSE",    sector: "Energy",        volatility: 1.2 },
   { symbol: "TCS.NS",        companyName: "Tata Consultancy",     exchange: "NSE",    sector: "Technology",    volatility: 0.9 },
   { symbol: "INFY.NS",       companyName: "Infosys",              exchange: "NSE",    sector: "Technology",    volatility: 1.0 },
   { symbol: "HDFCBANK.NS",   companyName: "HDFC Bank",            exchange: "NSE",    sector: "Banking",       volatility: 0.8 },
   { symbol: "WIPRO.NS",      companyName: "Wipro",                exchange: "NSE",    sector: "Technology",    volatility: 1.1 },
- 
   { symbol: "ICICIBANK.NS",  companyName: "ICICI Bank",           exchange: "NSE",    sector: "Banking",       volatility: 0.9 },
   { symbol: "BAJFINANCE.NS", companyName: "Bajaj Finance",        exchange: "NSE",    sector: "Finance",       volatility: 1.3 },
   { symbol: "ADANIENT.NS",   companyName: "Adani Enterprises",    exchange: "NSE",    sector: "Conglomerate",  volatility: 1.8 },
   { symbol: "SUNPHARMA.NS",  companyName: "Sun Pharmaceutical",   exchange: "NSE",    sector: "Pharma",        volatility: 1.0 },
-
-  // US stocks
   { symbol: "AAPL",          companyName: "Apple Inc.",           exchange: "NASDAQ", sector: "Technology",    volatility: 0.9 },
   { symbol: "TSLA",          companyName: "Tesla Inc.",           exchange: "NASDAQ", sector: "Automobile",    volatility: 2.0 },
   { symbol: "MSFT",          companyName: "Microsoft Corp.",      exchange: "NASDAQ", sector: "Technology",    volatility: 0.8 },
@@ -33,7 +22,7 @@ export const TRACKED_STOCKS = [
 ];
 
 /* ============================================================
-   SEED STOCKS — run once on server start
+   SEED STOCKS
    ============================================================ */
 export const seedStocks = async () => {
   try {
@@ -59,22 +48,37 @@ export const seedStocks = async () => {
 };
 
 /* ============================================================
-   FETCH QUOTE — single stock from Yahoo Finance v3
+   FETCH QUOTE
+   ✅ Uses Yahoo's own regularMarketChange + regularMarketChangePercent
+      instead of calculating from previousClose (which equals price
+      outside market hours causing 0% change display)
    ============================================================ */
 export const fetchQuote = async (symbol) => {
   try {
     const quote = await yahooFinance.quote(symbol);
+    const price = quote.regularMarketPrice || 0;
+
+    // ✅ Use Yahoo's pre-calculated change values directly
+    const change    = quote.regularMarketChange        ?? 0;
+    const changePct = quote.regularMarketChangePercent ?? 0;
+
+    // Derive a correct previousClose from the change
+    const prevClose = price - change > 0 ? price - change : (quote.regularMarketPreviousClose || price);
+
     return {
       symbol:        quote.symbol,
-      currentPrice:  quote.regularMarketPrice         || 0,
-      previousClose: quote.regularMarketPreviousClose  || 0,
-      openPrice:     quote.regularMarketOpen           || 0,
-      dayHigh:       quote.regularMarketDayHigh        || 0,
-      dayLow:        quote.regularMarketDayLow         || 0,
-      volume:        quote.regularMarketVolume         || 0,
-      marketCap:     quote.marketCap                   || 0,
-      weekHigh52:    quote.fiftyTwoWeekHigh             || 0,
-      weekLow52:     quote.fiftyTwoWeekLow              || 0,
+      currentPrice:  price,
+      previousClose: prevClose,
+      // ✅ Store Yahoo's direct change values so we never show 0 incorrectly
+      priceChange:    parseFloat(change.toFixed(2)),
+      priceChangePct: parseFloat(changePct.toFixed(2)),
+      openPrice:     quote.regularMarketOpen  || price,
+      dayHigh:       quote.regularMarketDayHigh || price,
+      dayLow:        quote.regularMarketDayLow  || price,
+      volume:        quote.regularMarketVolume  || 0,
+      marketCap:     quote.marketCap            || 0,
+      weekHigh52:    quote.fiftyTwoWeekHigh      || 0,
+      weekLow52:     quote.fiftyTwoWeekLow       || 0,
     };
   } catch (err) {
     console.error(`❌ Yahoo Finance fetch failed for ${symbol}:`, err.message);
@@ -83,7 +87,7 @@ export const fetchQuote = async (symbol) => {
 };
 
 /* ============================================================
-   SYNC SINGLE STOCK — fetch + update DB + circuit breaker
+   SYNC SINGLE STOCK
    ============================================================ */
 export const syncStock = async (symbol) => {
   try {
@@ -97,6 +101,9 @@ export const syncStock = async (symbol) => {
 
     stock.currentPrice  = quoteData.currentPrice;
     stock.previousClose = quoteData.previousClose;
+    // ✅ Store Yahoo's direct change values on the document
+    stock.priceChange    = quoteData.priceChange;
+    stock.priceChangePct = quoteData.priceChangePct;
     stock.openPrice     = quoteData.openPrice;
     stock.dayHigh       = quoteData.dayHigh;
     stock.dayLow        = quoteData.dayLow;
@@ -113,61 +120,40 @@ export const syncStock = async (symbol) => {
 
     const wasResumed = stock.checkAndResume();
 
-    // Circuit breaker — halt if price moved >10%
     if (!stock.isHalted && prevPrice > 0 && quoteData.currentPrice > 0) {
-      const pctMove = Math.abs(
-        ((quoteData.currentPrice - prevPrice) / prevPrice) * 100
-      );
+      const pctMove = Math.abs(((quoteData.currentPrice - prevPrice) / prevPrice) * 100);
       if (pctMove >= 10) {
-        stock.halt(
-          `Price moved ${pctMove.toFixed(1)}% — circuit breaker triggered`,
-          120000
-        );
+        stock.halt(`Price moved ${pctMove.toFixed(1)}% — circuit breaker triggered`, 120000);
         console.warn(`🔴 Circuit breaker: ${symbol} halted (${pctMove.toFixed(1)}% move)`);
       }
     }
 
     await stock.save();
-
     return { stock, wasResumed, priceChanged: prevPrice !== quoteData.currentPrice };
   } catch (err) {
-    await Stock.findOneAndUpdate(
-      { symbol: symbol.toUpperCase() },
-      { syncError: err.message }
-    );
+    await Stock.findOneAndUpdate({ symbol: symbol.toUpperCase() }, { syncError: err.message });
     console.error(`❌ syncStock failed for ${symbol}:`, err.message);
     return null;
   }
 };
 
 /* ============================================================
-   SYNC ALL STOCKS — called by BullMQ worker every 60s
+   SYNC ALL STOCKS
    ============================================================ */
 export const syncAllStocks = async () => {
   const results = [];
   const symbols = TRACKED_STOCKS.map((s) => s.symbol);
-
   console.log(`🔄 Syncing ${symbols.length} stocks...`);
 
   const BATCH_SIZE = 5;
   for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
-    const batch = symbols.slice(i, i + BATCH_SIZE);
-
-    const batchResults = await Promise.allSettled(
-      batch.map((symbol) => syncStock(symbol))
-    );
-
+    const batch        = symbols.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.allSettled(batch.map((symbol) => syncStock(symbol)));
     batchResults.forEach((result, idx) => {
-      if (result.status === "fulfilled" && result.value) {
-        results.push(result.value);
-      } else {
-        console.error(`❌ Sync failed: ${batch[idx]}`);
-      }
+      if (result.status === "fulfilled" && result.value) results.push(result.value);
+      else console.error(`❌ Sync failed: ${batch[idx]}`);
     });
-
-    if (i + BATCH_SIZE < symbols.length) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
+    if (i + BATCH_SIZE < symbols.length) await new Promise((r) => setTimeout(r, 500));
   }
 
   console.log(`✅ Synced ${results.length}/${symbols.length} stocks`);
@@ -175,7 +161,7 @@ export const syncAllStocks = async () => {
 };
 
 /* ============================================================
-   FETCH HISTORICAL — for ML training (1 year OHLCV)
+   FETCH HISTORICAL
    ============================================================ */
 export const fetchHistorical = async (symbol, days = 365) => {
   try {
@@ -184,18 +170,12 @@ export const fetchHistorical = async (symbol, days = 365) => {
     startDate.setDate(startDate.getDate() - days);
 
     const result = await yahooFinance.historical(symbol, {
-      period1:  startDate,
-      period2:  endDate,
-      interval: "1d",
+      period1: startDate, period2: endDate, interval: "1d",
     });
 
     return result.map((day) => ({
-      date:   day.date,
-      open:   day.open,
-      high:   day.high,
-      low:    day.low,
-      close:  day.close,
-      volume: day.volume,
+      date: day.date, open: day.open, high: day.high,
+      low:  day.low,  close: day.close, volume: day.volume,
     }));
   } catch (err) {
     console.error(`❌ fetchHistorical failed for ${symbol}:`, err.message);
@@ -218,9 +198,7 @@ export const getCachedPrice = async (redisClient, symbol) => {
   try {
     const cached = await redisClient.get(`stock:price:${symbol}`);
     return cached ? parseFloat(cached) : null;
-  } catch (err) {
-    return null;
-  }
+  } catch (err) { return null; }
 };
 
 export const getStockPrice = async (redisClient, symbol) => {

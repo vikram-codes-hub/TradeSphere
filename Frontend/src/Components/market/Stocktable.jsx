@@ -1,14 +1,15 @@
 import StockRow from "./Stockrow.jsx";
 
+// ✅ Keys match MarketsContext sortBy values
 const COLUMNS = [
-  { label: "#",        key: null        },
-  { label: "Stock",    key: "name"      },
-  { label: "Price",    key: "price"     },
-  { label: "Change",   key: "change"    },
-  { label: "% Change", key: "changePct" },
-  { label: "Volume",   key: "volume"    },
-  { label: "7D Chart", key: null        },
-  { label: "",         key: null        },
+  { label: "#",        key: null          },
+  { label: "Stock",    key: null          },
+  { label: "Price",    key: "price"       },
+  { label: "Change",   key: "change"      },
+  { label: "% Change", key: "change"      },
+  { label: "Volume",   key: "volume"      },
+  { label: "7D Chart", key: null          },
+  { label: "",         key: null          },
 ];
 
 const thStyle = {
@@ -27,18 +28,16 @@ const SkeletonRow = ({ i }) => (
 );
 
 const StockTable = ({ stocks, sortBy, setSortBy, watchlist, onToggleWatchlist, loading }) => {
-  const sortableKeys = ["name", "price", "change", "changePct", "volume"];
-
   const Header = () => (
     <div style={{ display: "grid", gridTemplateColumns: "40px 2fr 1.2fr 1fr 1fr 1fr 100px 44px", gap: "8px", padding: "0 20px", borderBottom: "1px solid #1a2540", background: "#0a1020" }}>
       {COLUMNS.map((col, i) => (
         <div
           key={i}
-          onClick={() => col.key && sortableKeys.includes(col.key) && setSortBy(col.key)}
-          style={{ ...thStyle, cursor: col.key && sortableKeys.includes(col.key) ? "pointer" : "default", color: sortBy === col.key ? "#2d7ef7" : "#64748b", display: "flex", alignItems: "center", gap: "4px" }}
+          onClick={() => col.key && setSortBy(col.key)}
+          style={{ ...thStyle, cursor: col.key ? "pointer" : "default", color: sortBy === col.key ? "#2d7ef7" : "#64748b", display: "flex", alignItems: "center", gap: "4px" }}
         >
           {col.label}
-          {col.key && sortableKeys.includes(col.key) && (
+          {col.key && (
             <span style={{ fontSize: "9px", opacity: sortBy === col.key ? 1 : 0.3 }}>▼</span>
           )}
         </div>

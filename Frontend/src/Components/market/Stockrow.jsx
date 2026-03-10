@@ -6,12 +6,12 @@ const StockRow = ({ stock, index, watchlist, onToggleWatchlist }) => {
   const navigate              = useNavigate();
   const [hovered, setHovered] = useState(false);
 
-  // ── Normalise field names (API uses currentPrice/changePercent) ──
-  const price     = stock.currentPrice  ?? stock.price      ?? 0;
-  const change    = stock.change        ?? 0;
-  const changePct = stock.changePercent ?? stock.changePct  ?? 0;
+  // ✅ Correct field names matching API response
+  const price     = stock.currentPrice  ?? stock.price ?? 0;
+  const change    = stock.priceChange    ?? stock.change ?? 0;        // ✅ fixed
+  const changePct = stock.priceChangePct ?? stock.changePct ?? stock.changePercent ?? 0; // ✅ fixed
   const volume    = stock.volume        ?? 0;
-  const name      = stock.name          ?? stock.companyName ?? stock.symbol;
+  const name      = stock.companyName   ?? stock.name ?? stock.symbol;
   const isHalted  = stock.isHalted      ?? false;
   const isUp      = changePct >= 0;
   const isWatched = watchlist.includes(stock.symbol);

@@ -13,15 +13,13 @@ const deriveExchange = (symbol) => {
 };
 
 const withChange = (s) => {
-  const change = parseFloat(((s.currentPrice || 0) - (s.previousClose || 0)).toFixed(2));
-  const pct    = (s.previousClose || 0) > 0
-    ? parseFloat((((s.currentPrice - s.previousClose) / s.previousClose) * 100).toFixed(2))
-    : 0;
-  return {
-    ...s.toObject(),
-    priceChange:    change,
-    priceChangePct: pct,
-  };
+  const obj = s.toObject();
+  // ✅ Use Yahoo's stored change values if available, fallback to calculation
+  const change = obj.priceChange    ?? parseFloat(((obj.currentPrice || 0) - (obj.previousClose || 0)).toFixed(2));
+  const pct    = obj.priceChangePct ?? ((obj.previousClose || 0) > 0
+    ? parseFloat((((obj.currentPrice - obj.previousClose) / obj.previousClose) * 100).toFixed(2))
+    : 0);
+  return { ...obj, priceChange: change, priceChangePct: pct };
 };
 
 /* ── Name → Symbol dictionary ────────────────────────────
