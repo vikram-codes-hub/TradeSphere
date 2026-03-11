@@ -1,17 +1,26 @@
 const OHLCVBar = ({ stock }) => {
+  // ✅ Normalise field names from real API
+  const price     = stock.currentPrice  ?? stock.price  ?? 0;
+  const open      = stock.openPrice     ?? stock.open   ?? 0;
+  const high      = stock.dayHigh       ?? stock.high   ?? 0;
+  const low       = stock.dayLow        ?? stock.low    ?? 0;
+  const close     = stock.previousClose ?? stock.close  ?? 0;
+  const volume    = stock.volume        ?? 0;
+  const marketCap = stock.marketCap     ?? 0;
+
   const stats = [
-    { label: "Open",     value: `₹${stock.open.toLocaleString("en-IN")}`,     color: "#e2e8f0" },
-    { label: "High",     value: `₹${stock.high.toLocaleString("en-IN")}`,     color: "#00e5a0" },
-    { label: "Low",      value: `₹${stock.low.toLocaleString("en-IN")}`,      color: "#ff4d6d" },
-    { label: "Close",    value: `₹${stock.close.toLocaleString("en-IN")}`,    color: "#e2e8f0" },
-    { label: "Volume",   value: stock.volume >= 1000000 ? `${(stock.volume / 1000000).toFixed(2)}M` : `${(stock.volume / 1000).toFixed(0)}K`, color: "#2d7ef7" },
-    { label: "Mkt Cap",  value: stock.marketCap >= 1e9  ? `₹${(stock.marketCap / 1e9).toFixed(1)}B`  : `₹${(stock.marketCap / 1e6).toFixed(0)}M`, color: "#94a3b8" },
+    { label: "Open",    value: `₹${open.toLocaleString("en-IN")}`,    color: "#e2e8f0" },
+    { label: "High",    value: `₹${high.toLocaleString("en-IN")}`,    color: "#00e5a0" },
+    { label: "Low",     value: `₹${low.toLocaleString("en-IN")}`,     color: "#ff4d6d" },
+    { label: "Close",   value: `₹${close.toLocaleString("en-IN")}`,   color: "#e2e8f0" },
+    { label: "Volume",  value: volume >= 1_000_000 ? `${(volume / 1_000_000).toFixed(2)}M` : volume >= 1_000 ? `${(volume / 1_000).toFixed(0)}K` : String(volume), color: "#2d7ef7" },
+    { label: "Mkt Cap", value: marketCap >= 1e12 ? `₹${(marketCap / 1e12).toFixed(2)}T` : marketCap >= 1e9 ? `₹${(marketCap / 1e9).toFixed(1)}B` : marketCap >= 1e6 ? `₹${(marketCap / 1e6).toFixed(0)}M` : "N/A", color: "#94a3b8" },
   ];
 
   // Day range bar
-  const rangeMin  = stock.low;
-  const rangeMax  = stock.high;
-  const rangePct  = ((stock.price - rangeMin) / (rangeMax - rangeMin)) * 100;
+  const rangeMin = low;
+  const rangeMax = high;
+  const rangePct = rangeMax > rangeMin ? ((price - rangeMin) / (rangeMax - rangeMin)) * 100 : 50;
 
   return (
     <div style={{
@@ -19,7 +28,6 @@ const OHLCVBar = ({ stock }) => {
       border:       "1px solid #1a2540",
       borderRadius: "16px",
       padding:      "20px 24px",
-      marginBottom: "20px",
     }}>
       {/* Stats row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "12px", marginBottom: "16px" }}>
@@ -40,20 +48,11 @@ const OHLCVBar = ({ stock }) => {
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
           <span style={{ fontSize: "10px", color: "#64748b", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.06em" }}>Day Range</span>
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", color: "#64748b" }}>
-            ₹{rangeMin.toLocaleString("en-IN")} — ₹{rangeMax.toLocaleString("en-IN")}
+            ₹{low.toLocaleString("en-IN")} — ₹{high.toLocaleString("en-IN")}
           </span>
         </div>
         <div style={{ position: "relative", height: "6px", background: "#1a2540", borderRadius: "3px" }}>
-          <div style={{
-            position:     "absolute",
-            left:         "0",
-            width:        "100%",
-            height:       "100%",
-            borderRadius: "3px",
-            background:   "linear-gradient(90deg, #ff4d6d, #ffd166, #00e5a0)",
-            opacity:      0.3,
-          }} />
-          {/* Current price indicator */}
+          <div style={{ position: "absolute", inset: 0, borderRadius: "3px", background: "linear-gradient(90deg, #ff4d6d, #ffd166, #00e5a0)", opacity: 0.3 }} />
           <div style={{
             position:     "absolute",
             left:         `${Math.min(Math.max(rangePct, 0), 100)}%`,

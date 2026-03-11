@@ -11,40 +11,47 @@ export const TradeProvider = ({ symbol, children }) => {
   const socket   = useSocket();
   const { user } = useAuth();
 
-  const [stock,       setStock]       = useState(null);
-  const [position,    setPosition]    = useState(null); // user's holding in this stock
-  const [portfolio,   setPortfolio]   = useState(null); // summary (for cash balance)
-  const [history,     setHistory]     = useState([]);   // recent trades for this stock
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState(null);
-  const [tradeLoading,setTradeLoading]= useState(false);
-  const [tradeResult, setTradeResult] = useState(null); // { success, type, qty, price, total }
+  const [stock,        setStock]        = useState(null);
+  const [position,     setPosition]     = useState(null);
+  const [portfolio,    setPortfolio]    = useState(null);
+  const [history,      setHistory]      = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState(null);
+  const [tradeLoading, setTradeLoading] = useState(false);
+  const [tradeResult,  setTradeResult]  = useState(null);
 
-  // ── Fetch stock data ──────────────────────────────────
+  // ── Fetch stock ───────────────────────────────────────
   const fetchStock = useCallback(async () => {
     try {
       const res = await stockService.getStock(symbol);
-      setStock(res?.stock ?? null);
+      const s = res ?? null; // stockService.getStock already returns the stock object
+      if (!s) { setError("Stock not found"); return; }
+      setStock(s);
     } catch (err) {
       setError("Stock not found");
     }
   }, [symbol]);
 
-  // ── Fetch user portfolio (cash balance + positions) ───
+  // ── Fetch portfolio + position (non-critical) ─────────
   const fetchPortfolio = useCallback(async () => {
     try {
-      const res = await portfolioService.getPortfolioSummary();
-      setPortfolio(res?.summary ?? res ?? null);
+      const res      = await portfolioService.getSummary();
+      setPortfolio(res?.summary ?? null); // summary: { cashBalance, netWorth, ... }
 
-      // Find this stock's position
       const holdingsRes = await portfolioService.getPortfolio();
-      const holdings    = holdingsRes?.portfolio?.holdings ?? holdingsRes?.holdings ?? [];
-      const found       = holdings.find(h => h.symbol === symbol || h.stock?.symbol === symbol);
+      const holdings = Array.isArray(holdingsRes?.portfolio) ? holdingsRes.portfolio : Array.isArray(holdingsRes?.holdings) ? holdingsRes.holdings : Array.isArray(holdingsRes) ? holdingsRes : [];
+      const found       = holdings.find(h =>
+        h.symbol === symbol ||
+        h.stock?.symbol === symbol ||
+        h.stockSymbol === symbol
+      );
       setPosition(found ?? null);
-    } catch (_) {}
+    } catch (_) {
+      // Portfolio failure is non-critical — page still works
+    }
   }, [symbol]);
 
-  // ── Fetch recent trades for this stock ────────────────
+  // ── Fetch trade history (non-critical) ────────────────
   const fetchHistory = useCallback(async () => {
     try {
       const res = await tradeService.getHistory({ symbol, limit: 10 });
@@ -52,22 +59,24 @@ export const TradeProvider = ({ symbol, children }) => {
     } catch (_) {}
   }, [symbol]);
 
-  // ── Load everything on mount ──────────────────────────
+  // ── Load on mount ─────────────────────────────────────
+  // ✅ Stock loads first — portfolio/history failures are silent
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       setError(null);
-      await Promise.all([fetchStock(), fetchPortfolio(), fetchHistory()]);
+      await fetchStock();           // critical — wait for this
       setLoading(false);
+      fetchPortfolio();             // non-critical — fire and forget
+      fetchHistory();               // non-critical — fire and forget
     };
     load();
   }, [fetchStock, fetchPortfolio, fetchHistory]);
 
-  // ── Socket — live price updates ───────────────────────
+  // ── Socket live price ─────────────────────────────────
   useEffect(() => {
     if (!socket || !symbol) return;
 
-    // Join this stock's room
     socket.emit("subscribe:stock", symbol);
 
     const onPrice = ({ symbol: sym, price, change, changePercent, volume }) => {
@@ -81,8 +90,8 @@ export const TradeProvider = ({ symbol, children }) => {
       } : prev);
     };
 
-    const onHalt    = ({ symbol: sym }) => { if (sym === symbol) setStock(prev => prev ? { ...prev, isHalted: true  } : prev); };
-    const onResume  = ({ symbol: sym }) => { if (sym === symbol) setStock(prev => prev ? { ...prev, isHalted: false } : prev); };
+    const onHalt   = ({ symbol: sym }) => { if (sym === symbol) setStock(prev => prev ? { ...prev, isHalted: true  } : prev); };
+    const onResume = ({ symbol: sym }) => { if (sym === symbol) setStock(prev => prev ? { ...prev, isHalted: false } : prev); };
 
     socket.on("price:update",  onPrice);
     socket.on("stock:halted",  onHalt);
@@ -96,23 +105,15 @@ export const TradeProvider = ({ symbol, children }) => {
     };
   }, [socket, symbol]);
 
-  // ── Place BUY order ───────────────────────────────────
+  // ── Place BUY ─────────────────────────────────────────
   const placeBuy = useCallback(async (quantity) => {
     if (!stock) return;
     setTradeLoading(true);
     setTradeResult(null);
     try {
-      const res = await tradeService.buy(symbol, quantity);
+      const res   = await tradeService.buy(symbol, quantity);
       const price = stock.currentPrice;
-      setTradeResult({
-        success: true,
-        type:    "BUY",
-        qty:     quantity,
-        price,
-        total:   parseFloat((quantity * price).toFixed(2)),
-        trade:   res?.trade,
-      });
-      // Refresh portfolio + history after trade
+      setTradeResult({ success: true, type: "BUY", qty: quantity, price, total: parseFloat((quantity * price).toFixed(2)), trade: res?.trade });
       await Promise.all([fetchPortfolio(), fetchHistory()]);
       return { success: true };
     } catch (err) {
@@ -124,22 +125,15 @@ export const TradeProvider = ({ symbol, children }) => {
     }
   }, [stock, symbol, fetchPortfolio, fetchHistory]);
 
-  // ── Place SELL order ──────────────────────────────────
+  // ── Place SELL ────────────────────────────────────────
   const placeSell = useCallback(async (quantity) => {
     if (!stock) return;
     setTradeLoading(true);
     setTradeResult(null);
     try {
-      const res = await tradeService.sell(symbol, quantity);
+      const res   = await tradeService.sell(symbol, quantity);
       const price = stock.currentPrice;
-      setTradeResult({
-        success: true,
-        type:    "SELL",
-        qty:     quantity,
-        price,
-        total:   parseFloat((quantity * price).toFixed(2)),
-        trade:   res?.trade,
-      });
+      setTradeResult({ success: true, type: "SELL", qty: quantity, price, total: parseFloat((quantity * price).toFixed(2)), trade: res?.trade });
       await Promise.all([fetchPortfolio(), fetchHistory()]);
       return { success: true };
     } catch (err) {
@@ -153,28 +147,18 @@ export const TradeProvider = ({ symbol, children }) => {
 
   const clearTradeResult = useCallback(() => setTradeResult(null), []);
 
-  // ── Derived values ────────────────────────────────────
-  const cashBalance  = portfolio?.cashBalance ?? portfolio?.balance ?? 0;
-  const price        = stock?.currentPrice ?? 0;
-  const maxBuy       = price > 0 ? Math.floor(cashBalance / price) : 0;
-  const sharesOwned  = position?.quantity ?? position?.shares ?? 0;
+  const cashBalance = portfolio?.cashBalance ?? portfolio?.balance ?? 0;
+  const price       = stock?.currentPrice ?? 0;
+  const maxBuy      = price > 0 ? Math.floor(cashBalance / price) : 0;
+  const sharesOwned = position?.quantity ?? position?.shares ?? 0;
 
   return (
     <TradeContext.Provider value={{
-      stock,
-      position,
-      portfolio,
-      history,
-      loading,
-      error,
-      tradeLoading,
-      tradeResult,
-      cashBalance,
-      maxBuy,
-      sharesOwned,
-      placeBuy,
-      placeSell,
-      clearTradeResult,
+      stock, position, portfolio, history,
+      loading, error,
+      tradeLoading, tradeResult,
+      cashBalance, maxBuy, sharesOwned,
+      placeBuy, placeSell, clearTradeResult,
       refresh: () => Promise.all([fetchStock(), fetchPortfolio(), fetchHistory()]),
     }}>
       {children}
