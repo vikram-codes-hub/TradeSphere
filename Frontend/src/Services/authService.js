@@ -34,4 +34,8 @@ export const authService = {
     const res = await api.put("/auth/password", { currentPassword, newPassword });
     return res.data;
   },
+  upgrade: async () => {
+  const res = await api.patch("/auth/upgrade");
+  return res.data.user;
+},
 };

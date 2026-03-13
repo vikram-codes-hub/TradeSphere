@@ -13,8 +13,7 @@ import PredictionHistory      from "../Components/prediction/PredictionHistory.j
    ============================================================ */
 const PredictionsPage = () => {
   const socket    = useSocket();
-  const { user }  = useAuth();
-  const isPremium = user?.isPremium ?? user?.plan === "premium" ?? false;
+  const { isPremium } = useAuth();
 
   const [selected,     setSelected]     = useState("RELIANCE.NS");
   const [loading,      setLoading]      = useState(false);

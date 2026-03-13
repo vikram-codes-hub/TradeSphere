@@ -8,9 +8,9 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import os
 
-from routes.predict import predict_bp
-from routes.health import health_bp
-from routes.train import train_bp
+from Routes.predict import predict_bp
+from Routes.Health import health_bp
+from Routes.train import train_bp
 from utils.logger import get_logger
 
 load_dotenv()

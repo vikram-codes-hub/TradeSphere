@@ -8,7 +8,7 @@ This is a key interview talking point:
 """
 
 import numpy as np
-from models.linear_model import LinearModel
+from models.Linear_model import LinearModel
 from models.random_forest_model import RandomForestModel
 from utils.logger import get_logger
 

@@ -10,8 +10,8 @@ from preprocessing.data_cleaner   import DataCleaner
 from preprocessing.feature_engineer import FeatureEngineer
 from preprocessing.scaler          import FeatureScaler
 from models.model_selector          import ModelSelector
-from services.trend_classifier      import TrendClassifier
-from services.confidence_scorer     import ConfidenceScorer
+from Services.trend_classifier      import TrendClassifier
+from Services.confidence_scorer     import ConfidenceScorer
 from utils.logger                   import get_logger
 
 logger   = get_logger(__name__)

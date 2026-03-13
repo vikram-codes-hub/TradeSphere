@@ -4,7 +4,7 @@ Called by Node.js backend via mlBridge.service.js
 """
 
 from flask import Blueprint, request, jsonify
-from services.prediction_service import PredictionService
+from Services.prediction_service import PredictionService
 from utils.validators import validate_predict_payload
 from utils.logger import get_logger
 
