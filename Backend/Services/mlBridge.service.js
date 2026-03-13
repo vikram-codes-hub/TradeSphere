@@ -1,7 +1,7 @@
 import axios        from "axios";
-import yahooFinance from "yahoo-finance2";
-
-const ML_URL = process.env.ML_SERVICE_URL || "http://localhost:8000";
+import YahooFinance from "yahoo-finance2";
+const yahooFinance = new YahooFinance();
+const ML_URL = process.env.ML_SERVICE_URL || "http://localhost:5001";
 
 /* ── Check if ML service is alive ────────────────────────── */
 export const checkMLHealth = async () => {
@@ -13,24 +13,29 @@ export const checkMLHealth = async () => {
   }
 };
 
-/* ── Fetch price history from Yahoo Finance ─────────────── */
 const fetchPriceHistory = async (symbol) => {
   try {
+    const yahooFinance = new YahooFinance({ suppressNotices: ['ripHistorical'] });
     const endDate   = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 90); // last 90 days
+    startDate.setDate(startDate.getDate() - 90);
 
-    const result = await yahooFinance.historical(symbol, {
+    const result = await yahooFinance.chart(symbol, {
       period1:  startDate.toISOString().split("T")[0],
       period2:  endDate.toISOString().split("T")[0],
       interval: "1d",
     });
 
-    return result.map((d) => ({
-      price:     d.close,
-      volume:    d.volume,
-      timestamp: d.date.toISOString(),
-    }));
+    const quotes = result?.quotes ?? [];
+    if (!quotes.length) throw new Error(`No data returned for ${symbol}`);
+
+    return quotes
+      .filter(d => d.close != null)
+      .map(d => ({
+        price:     d.close,
+        volume:    d.volume ?? 0,
+        timestamp: new Date(d.date).toISOString(),
+      }));
   } catch (err) {
     throw new Error(`Failed to fetch price history for ${symbol}: ${err.message}`);
   }

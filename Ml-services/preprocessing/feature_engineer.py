@@ -45,22 +45,39 @@ class FeatureEngineer:
         df["rsi_14"] = self._compute_rsi(df["price"], period=14)
 
         # ── Volume change % ───────────────────────────────
-        df["volume_change"] = df["volume"].pct_change() * 100
+        # Use safe pct_change — if volume is 0, result is 0 not inf
+        df["volume_change"] = df["volume"].replace(0, np.nan).pct_change() * 100
+        df["volume_change"] = df["volume_change"].fillna(0)
 
         # ── Bollinger Bands ───────────────────────────────
-        bb_mid              = df["price"].rolling(window=20).mean()
-        bb_std              = df["price"].rolling(window=20).std()
-        bb_upper            = bb_mid + 2 * bb_std
-        bb_lower            = bb_mid - 2 * bb_std
-        band_width          = bb_upper - bb_lower
-        # position: 0 = at lower band, 1 = at upper band
-        df["bb_position"]   = (df["price"] - bb_lower) / band_width.replace(0, np.nan)
+        bb_mid   = df["price"].rolling(window=20).mean()
+        bb_std   = df["price"].rolling(window=20).std()
+        bb_upper = bb_mid + 2 * bb_std
+        bb_lower = bb_mid - 2 * bb_std
+        band_width = bb_upper - bb_lower
+
+        # Safe division — if band_width is 0, bb_position = 0.5
+        df["bb_position"] = np.where(
+            band_width > 0,
+            (df["price"] - bb_lower) / band_width,
+            0.5
+        )
 
         # ── Target: next day's price ──────────────────────
         df["target"] = df["price"].shift(-1)
 
-        # ── Drop rows with NaN (from rolling windows) ─────
+        # ── Replace ALL inf/-inf with NaN before dropping ─
+        df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+        # ── Drop rows with NaN (from rolling windows + above)
         df = df.dropna().reset_index(drop=True)
+
+        # ── Clip extreme feature values (safety net) ──────
+        for col in self.get_feature_columns():
+            if col in df.columns:
+                p01 = df[col].quantile(0.01)
+                p99 = df[col].quantile(0.99)
+                df[col] = df[col].clip(lower=p01, upper=p99)
 
         logger.debug(f"Features built: {len(df)} rows, {len(df.columns)} columns")
         return df
@@ -82,13 +99,17 @@ class FeatureEngineer:
     # ─────────────────────────────────────────────────────
     @staticmethod
     def _compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
-        delta = series.diff()
-        gain  = delta.clip(lower=0)
-        loss  = -delta.clip(upper=0)
+        delta    = series.diff()
+        gain     = delta.clip(lower=0)
+        loss     = -delta.clip(upper=0)
 
         avg_gain = gain.rolling(window=period, min_periods=period).mean()
         avg_loss = loss.rolling(window=period, min_periods=period).mean()
 
+        # Safe division
         rs  = avg_gain / avg_loss.replace(0, np.nan)
         rsi = 100 - (100 / (1 + rs))
+
+        # When avg_loss == 0, RSI should be 100 (all gains, no losses)
+        rsi = rsi.fillna(100)
         return rsi

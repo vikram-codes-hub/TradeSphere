@@ -19,10 +19,8 @@ export const initPredictionWorker = (redisConnection) => {
         prediction.status = "PROCESSING";
         await prediction.save();
 
-        // mlData is already unwrapped from { success, data: { ... } }
         const mlData = await requestMLPrediction(symbol);
 
-        // ✅ camelCase keys matching prediction_service.py response
         prediction.complete({
           predictedPrice: mlData.predictedPrice,
           trend:          mlData.trend,
@@ -36,10 +34,21 @@ export const initPredictionWorker = (redisConnection) => {
         prediction.inputDataPoints = mlData.dataPoints || 0;
         await prediction.save();
 
+        // Emit full prediction data so frontend can display without extra API call
         global.io?.to(`user:${prediction.user}`).emit("prediction:ready", {
-          predictionId: prediction._id,
+          predictionId:   prediction._id,
           symbol,
-          status:       "COMPLETED",
+          status:         "COMPLETED",
+          predictedPrice: mlData.predictedPrice,
+          currentPrice:   mlData.currentPrice,
+          trend:          mlData.trend,
+          pctChange:      mlData.pctChange,
+          confidence:     mlData.confidence,
+          modelUsed:      mlData.modelUsed,
+          rmse:           mlData.rmse,
+          r2:             mlData.r2,
+          companyName:    prediction.companyName ?? symbol,
+          createdAt:      prediction.completedAt ?? new Date(),
         });
 
         console.log(`✅ Prediction complete for ${symbol} — ₹${mlData.currentPrice} → ₹${mlData.predictedPrice} (${mlData.trend})`);
@@ -54,7 +63,7 @@ export const initPredictionWorker = (redisConnection) => {
           error:        err.message,
         });
 
-        throw err; // let BullMQ handle retry
+        throw err;
       }
     },
     { connection: redisConnection, concurrency: 3 }

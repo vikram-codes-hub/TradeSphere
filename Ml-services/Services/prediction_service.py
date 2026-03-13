@@ -2,102 +2,96 @@
 Prediction Service  ← THE CORE ORCHESTRATOR
 Full pipeline:
   raw history → clean → features → scale → predict → classify → score → return
+
+KEY FIX: y (target prices) are NOT scaled — models train and predict real prices directly.
+Only X (features) are scaled. This prevents the predicted price being a tiny scaled value.
 """
 
 import os
 import numpy as np
-from preprocessing.data_cleaner   import DataCleaner
+from preprocessing.data_cleaner     import DataCleaner
 from preprocessing.feature_engineer import FeatureEngineer
-from preprocessing.scaler          import FeatureScaler
+from preprocessing.scaler           import FeatureScaler
 from models.model_selector          import ModelSelector
 from Services.trend_classifier      import TrendClassifier
 from Services.confidence_scorer     import ConfidenceScorer
 from utils.logger                   import get_logger
 
-logger   = get_logger(__name__)
-MIN_PTS  = int(os.getenv("MIN_TRAINING_POINTS", 50))
+logger  = get_logger(__name__)
+MIN_PTS = int(os.getenv("MIN_TRAINING_POINTS", 30))
 
 
 class PredictionService:
 
     def __init__(self):
-        self.cleaner    = DataCleaner()
-        self.engineer   = FeatureEngineer()
-        self.selector   = ModelSelector()
-        self.trend_clf  = TrendClassifier()
+        self.cleaner     = DataCleaner()
+        self.engineer    = FeatureEngineer()
+        self.selector    = ModelSelector()
+        self.trend_clf   = TrendClassifier()
         self.conf_scorer = ConfidenceScorer()
 
-    # ─────────────────────────────────────────────────────
     def predict(self, symbol: str, raw_history: list) -> dict:
-        """
-        Full prediction pipeline.
 
-        Returns:
-        {
-          "predictedPrice":  1432.50,
-          "currentPrice":    1398.00,
-          "trend":           "bullish",
-          "pctChange":       2.47,
-          "confidence":      78.4,
-          "modelUsed":       "RandomForest",
-          "rmse":            12.3,
-          "r2":              0.91,
-        }
-        """
-        # ── 1. Clean raw data ─────────────────────────────
+        # ── 1. Clean ──────────────────────────────────────
         df = self.cleaner.clean(raw_history)
+        logger.info(f"[{symbol}] Clean data: {len(df)} rows")
 
         if len(df) < MIN_PTS:
             raise ValueError(
-                f"Not enough data to predict. Need {MIN_PTS} points, got {len(df)}."
+                f"Not enough data. Need {MIN_PTS} points, got {len(df)}."
             )
 
-        # ── 2. Engineer features ──────────────────────────
-        df = self.engineer.build_features(df)
+        # ── 2. Features ───────────────────────────────────
+        df           = self.engineer.build_features(df)
         feature_cols = self.engineer.get_feature_columns()
+        logger.info(f"[{symbol}] Features: {len(df)} rows")
 
-        X = df[feature_cols].values
-        y = df["target"].values
+        X = df[feature_cols].values   # shape (n, 9)
+        y = df["target"].values       # real prices — NOT scaled
 
-        # ── 3. Scale ──────────────────────────────────────
-        scaler = FeatureScaler(symbol)
+        # ── 3. Train/test split ───────────────────────────
+        split   = max(1, int(len(X) * 0.8))
+        X_train = X[:split];  X_test = X[split:]
+        y_train = y[:split];  y_test = y[split:] if len(y[split:]) > 0 else y[-1:]
 
-        # Use last 20% as test set
-        split     = max(1, int(len(X) * 0.8))
-        X_train   = X[:split]
-        X_test    = X[split:]
-        y_train   = y[:split]
-        y_test    = y[split:] if len(y[split:]) > 0 else y[-1:]
-
+        # ── 4. Scale FEATURES only (not y) ───────────────
+        scaler     = FeatureScaler(symbol)
         X_train_sc = scaler.fit_transform(X_train)
         X_test_sc  = scaler.transform(X_test)
 
-        # ── 4. Train / load models ────────────────────────
-        # Always retrain on latest data (models are cheap to train)
+        # ── 5. Train both models, pick best ───────────────
         metrics = self.selector.select_and_train(
             symbol, X_train_sc, X_test_sc, y_train, y_test
         )
+        logger.info(f"[{symbol}] Best model: {metrics['best_model']} RMSE={metrics['best_rmse']:.2f}")
 
-        # ── 5. Predict next day ───────────────────────────
-        # Use last row (most recent data point) as input
-        latest_features = X[-1].reshape(1, -1)
-        latest_scaled   = scaler.transform(latest_features)
+        # ── 6. Predict next-day price ─────────────────────
+        latest_sc = scaler.transform(X[-1].reshape(1, -1))
+        model, _  = self.selector.load_best(symbol)
 
-        model, model_name = self.selector.load_best(symbol)
-        raw_pred = float(model.predict(latest_scaled)[0])
+        if model is None:
+            raise ValueError(f"No trained model available for {symbol}")
 
-        # ── 6. Current price ──────────────────────────────
-        current_price = float(df["price"].iloc[-1])
+        predicted_price = float(model.predict(latest_sc)[0])
+        current_price   = float(df["price"].iloc[-1])
 
-        # ── 7. Classify trend ─────────────────────────────
-        trend      = self.trend_clf.classify(current_price, raw_pred)
-        pct_change = self.trend_clf.pct_change(current_price, raw_pred)
+        logger.info(f"[{symbol}] predicted={predicted_price:.2f}, current={current_price:.2f}")
 
-        # ── 8. Confidence score ───────────────────────────
+        # ── 7. Sanity check ───────────────────────────────
+        # If predicted price is < 1% of current, it's a scaled artifact — reject it
+        if predicted_price < current_price * 0.01 or predicted_price > current_price * 10:
+            raise ValueError(
+                f"Prediction out of range: predicted={predicted_price:.2f}, current={current_price:.2f}. "
+                f"Check that y_train contains real prices (not scaled values)."
+            )
+
+        # ── 8. Classify + score ───────────────────────────
+        trend      = self.trend_clf.classify(current_price, predicted_price)
+        pct_change = self.trend_clf.pct_change(current_price, predicted_price)
         confidence = self.conf_scorer.score(metrics["best_rmse"], current_price)
 
         result = {
-            "predictedPrice": round(raw_pred, 2),
+            "predictedPrice": round(predicted_price, 2),
             "currentPrice":   round(current_price, 2),
             "trend":          trend,
             "pctChange":      pct_change,
@@ -111,7 +105,7 @@ class PredictionService:
         }
 
         logger.info(
-            f"[{symbol}] Prediction complete: "
-            f"₹{current_price} → ₹{raw_pred} ({trend}, {confidence}% confidence)"
+            f"[{symbol}] ✅ ₹{current_price} → ₹{predicted_price} "
+            f"({trend}, {confidence}% conf)"
         )
         return result

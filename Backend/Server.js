@@ -46,7 +46,7 @@ global.io = io;
 initSocket(io); // ← uses Socket/index.js instead of inline handlers
 
 /* ── Banner ──────────────────────────────────────────────── */
-const printBanner = ({ mongoHost, redisHost, stocks, port }) => {
+const printBanner = ({ mongoHost, redisHost, stocks, port, mlHost }) => {
   const line  = "─".repeat(52);
   const green = (t) => `\x1b[32m${t}\x1b[0m`;
   const cyan  = (t) => `\x1b[36m${t}\x1b[0m`;
@@ -80,6 +80,7 @@ ${cyan("  ╚══════╝╚═╝     ╚═╝  ╚═╝╚═══
   ${green("🚀")} ${bold("Server")}    ${dim("→")} http://localhost:${bold(port)}
   ${green("📡")} ${bold("API Base")}  ${dim("→")} http://localhost:${bold(port)}/api
   ${green("🏥")} ${bold("Health")}    ${dim("→")} http://localhost:${bold(port)}/api/health
+  ${green("🏥")} ${bold("ML Health")}    ${dim("→")} http://localhost:${bold(mlHost)}/api/health
   ${line}
   ${dim("Press Ctrl+C to stop")}
 `);
@@ -135,6 +136,7 @@ const startServer = async () => {
         redisHost: process.env.REDIS_HOST?.split(".")[0] + ".redis-cloud" || "Redis Cloud",
         stocks:    "14",
         port:      PORT,
+        mlHost:   5001
       });
     });
 

@@ -3,27 +3,28 @@ import Redis from "ioredis";
 let redisClient     = null;
 let redisConnection = null;
 
+const sharedOptions = {
+  maxRetriesPerRequest: null,
+  enableReadyCheck:     false,
+  keepAlive:            10000,
+  connectTimeout:       30000,
+  retryStrategy: (times) => {
+    if (times > 20) return null;
+    return Math.min(times * 500, 5000);
+  },
+};
+
 export const initRedis = async () => {
   try {
-    // ── ioredis via URL — Redis Cloud handles TLS in the URL itself
-    redisClient = new Redis(process.env.REDIS_URL, {
-      maxRetriesPerRequest: null,
-      enableReadyCheck:     false,
-      // NO tls:{} here — the URL already contains auth info
-      // adding tls:{} causes "wrong version number" SSL conflict
-    });
-
-    redisClient.on("error",   (err) => console.error("❌ Redis Client Error", err.message));
+    // Main client
+    redisClient = new Redis(process.env.REDIS_URL, sharedOptions);
+    redisClient.on("error",   (err) => console.error("❌ Redis Client Error:", err.message));
     redisClient.on("connect", ()    => console.log("✅ Redis connected"));
 
-    // ── BullMQ connection — host/port/password separately, no TLS
-    redisConnection = {
-      host:     process.env.REDIS_HOST,
-      port:     parseInt(process.env.REDIS_PORT),
-      password: process.env.REDIS_PASSWORD,
-      username: process.env.REDIS_USERNAME || "default",
-      // NO tls:{} here either
-    };
+
+    redisConnection = new Redis(process.env.REDIS_URL, sharedOptions);
+    redisConnection.on("error",   (err) => console.error("❌ BullMQ Redis Error:", err.message));
+    redisConnection.on("connect", ()    => console.log("✅ BullMQ Redis connected"));
 
     await redisClient.ping();
     console.log("✅ Redis ping successful");
