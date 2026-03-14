@@ -97,8 +97,8 @@ export const MarketsProvider = ({ children }) => {
     const inList = watchlist.includes(symbol);
     setWatchlist(prev => inList ? prev.filter(s => s !== symbol) : [...prev, symbol]);
     try {
-      if (inList) await watchlistService.removeFromWatchlist(symbol);
-      else        await watchlistService.addToWatchlist(symbol);
+      if (inList) await watchlistService.remove(symbol);
+else        await watchlistService.add(symbol);
     } catch (_) {
       setWatchlist(prev => inList ? [...prev, symbol] : prev.filter(s => s !== symbol));
     }

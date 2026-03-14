@@ -23,12 +23,13 @@ export const authService = {
     return res.data.user;
   },
 
-  updateProfile: async (formData) => {
-    const res = await api.put("/auth/profile", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    return res.data.user;
-  },
+ updateProfile: async (data) => {
+  const isFormData = data instanceof FormData;
+  const res = await api.put("/auth/profile", data, {
+    headers: isFormData ? { "Content-Type": "multipart/form-data" } : {},
+  });
+  return res.data.user;
+},
 
   changePassword: async (currentPassword, newPassword) => {
     const res = await api.put("/auth/password", { currentPassword, newPassword });

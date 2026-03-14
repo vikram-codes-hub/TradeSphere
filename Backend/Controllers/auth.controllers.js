@@ -32,7 +32,7 @@ const sendTokenResponse = (user, statusCode, res) => {
 
 //register new user
 
-export const register = async (req, res,next) => {
+export const register = async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
 
@@ -60,7 +60,7 @@ export const register = async (req, res,next) => {
 };
 
 //Login user
-export const login = async (req, res,next) => {
+export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -85,17 +85,17 @@ export const login = async (req, res,next) => {
     }
 
     if (user.isBanned) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Your account has been banned. Please contact support.",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "Your account has been banned. Please contact support.",
+      });
     }
     user.lastLogin = new Date();
     await user.save({ validateBeforeSave: false });
     sendTokenResponse(user, 200, res);
-  } catch (error) {next(error);}
+  } catch (error) {
+    next(error);
+  }
 };
 
 //    Protected route to get current user profile
@@ -118,6 +118,7 @@ export const getMe = async (req, res, next) => {
         email: user.email,
         role: user.role,
         avatar: user.avatar,
+        bio: user.bio,
         cashBalance: user.cashBalance,
         totalTrades: user.totalTrades,
         totalPnl: user.totalPnl,
@@ -142,30 +143,28 @@ export const updateProfile = async (req, res, next) => {
         .status(404)
         .json({ success: false, message: "User not found." });
 
-    // Update name if provided
-    if (req.body.name && req.body.name.trim()) user.name = req.body.name.trim();
+    const body = req.body ?? {};
+    if (body.name?.trim()) user.name = body.name.trim();
+    if (body.email?.trim()) user.email = body.email.trim();
+    if (body.bio !== undefined) user.bio = body.bio;
 
-    // Update avatar if file uploaded
-    if (req.file) {
-      if (user.avatar) {
-        await deleteFromCloudinary(getPublicIdFromUrl(user.avatar));
-      }
-      user.avatar = req.file.path; // Cloudinary URL
-    }
+    if (req.file) user.avatar = req.file.path;
 
     await user.save({ validateBeforeSave: false });
-
-    res.status(200).json({
-      success: true,
-      message: "Profile updated successfully.",
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        avatar: user.avatar,
-        role: user.role,
-      },
-    });
+    res
+      .status(200)
+      .json({
+        success: true,
+        message: "Profile updated.",
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          role: user.role,
+          bio: user.bio,
+        },
+      });
   } catch (err) {
     next(err);
   }
@@ -175,20 +174,16 @@ export const changePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Please provide current and new password.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Please provide current and new password.",
+      });
     }
     if (newPassword.length < 6) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "New password must be at least 6 characters long.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 6 characters long.",
+      });
     }
     const user = await User.findById(req.user._id).select("+password");
     if (!user) {
