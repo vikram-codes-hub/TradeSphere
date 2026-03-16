@@ -6,6 +6,57 @@ import { fetchQuote, getStockPrice } from "../Services/Stockservice.js";
 import { getRedisClient }            from "../Config/redis.js";
 import { addSettlementJob }          from "../Queue/settlement.queue.js";
 
+/* ============================================================
+   MARKET HOURS HELPER
+   NSE/BSE: Monday–Friday, 9:15 AM – 3:30 PM IST
+   ============================================================ */
+const isMarketOpen = () => {
+  // Get current time in IST (UTC+5:30)
+  const now     = new Date();
+  const utcMs   = now.getTime() + now.getTimezoneOffset() * 60000;
+  const istMs   = utcMs + 5.5 * 60 * 60 * 1000;
+  const ist     = new Date(istMs);
+
+  const day     = ist.getDay();   // 0=Sun, 1=Mon ... 6=Sat
+  const hours   = ist.getHours();
+  const minutes = ist.getMinutes();
+  const time    = hours * 60 + minutes; // minutes since midnight IST
+
+  const OPEN    = 9  * 60 + 15; // 9:15 AM = 555 mins
+  const CLOSE   = 15 * 60 + 30; // 3:30 PM = 930 mins
+
+  const isWeekday = day >= 1 && day <= 5;
+  const isDuringHours = time >= OPEN && time < CLOSE;
+
+  return { open: isWeekday && isDuringHours, day, time, ist };
+};
+
+const getMarketStatusMessage = (day, time) => {
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dayName = days[day];
+
+  if (day === 0 || day === 6) {
+    const nextMonday = day === 0 ? 1 : 2; // days until Monday
+    return `Markets are closed on weekends. Trading resumes Monday at 9:15 AM IST.`;
+  }
+
+  const OPEN  = 9  * 60 + 15;
+  const CLOSE = 15 * 60 + 30;
+
+  if (time < OPEN) {
+    const minsUntilOpen = OPEN - time;
+    const h = Math.floor(minsUntilOpen / 60);
+    const m = minsUntilOpen % 60;
+    return `Markets open at 9:15 AM IST. Opens in ${h > 0 ? `${h}h ` : ""}${m}m.`;
+  }
+
+  if (time >= CLOSE) {
+    return `Markets closed for today at 3:30 PM IST. Trading resumes tomorrow at 9:15 AM IST.`;
+  }
+
+  return "Markets are currently closed.";
+};
+
 /* ── Internal helper ─────────────────────────────────────── */
 const getLivePrice = async (symbol) => {
   const redisClient = getRedisClient();
@@ -23,6 +74,16 @@ export const buyStock = async (req, res, next) => {
     const { symbol, quantity } = req.body;
     if (!symbol || !quantity || quantity <= 0)
       return res.status(400).json({ success: false, message: "Please provide a valid symbol and quantity." });
+
+    // ── Market hours check ────────────────────────────────
+    const { open, day, time } = isMarketOpen();
+    if (!open) {
+      return res.status(400).json({
+        success:       false,
+        marketClosed:  true,
+        message:       getMarketStatusMessage(day, time),
+      });
+    }
 
     const qty      = parseInt(quantity);
     const stockDoc = await Stock.findOne({ symbol: symbol.toUpperCase() });
@@ -84,7 +145,6 @@ export const buyStock = async (req, res, next) => {
       balanceAfter: user.cashBalance,
     });
 
-    // Add settlement job to queue
     await addSettlementJob({
       userId:  req.user._id.toString(),
       tradeId: trade._id.toString(),
@@ -130,6 +190,16 @@ export const sellStock = async (req, res, next) => {
     if (!symbol || !quantity || quantity <= 0)
       return res.status(400).json({ success: false, message: "Please provide a valid symbol and quantity." });
 
+    // ── Market hours check ────────────────────────────────
+    const { open, day, time } = isMarketOpen();
+    if (!open) {
+      return res.status(400).json({
+        success:       false,
+        marketClosed:  true,
+        message:       getMarketStatusMessage(day, time),
+      });
+    }
+
     const qty      = parseInt(quantity);
     const stockDoc = await Stock.findOne({ symbol: symbol.toUpperCase() });
 
@@ -155,7 +225,6 @@ export const sellStock = async (req, res, next) => {
     const pnlPct        = parseFloat((((price - holding.avgBuyPrice) / holding.avgBuyPrice) * 100).toFixed(2));
     const avgBuyPrice   = holding.avgBuyPrice;
 
-    // Update user
     const user        = await User.findById(req.user._id);
     user.cashBalance  = parseFloat((user.cashBalance + totalReceived).toFixed(2));
     user.totalTrades += 1;
@@ -163,7 +232,6 @@ export const sellStock = async (req, res, next) => {
     if (pnl > 0) user.winningTrades += 1;
     await user.save({ validateBeforeSave: false });
 
-    // Update portfolio
     holding.quantity    -= qty;
     holding.currentPrice = price;
     holding.lastUpdated  = new Date();
@@ -173,7 +241,6 @@ export const sellStock = async (req, res, next) => {
       await holding.save();
     }
 
-    // Record trade
     const trade = await Trade.create({
       user:         req.user._id,
       symbol:       symbol.toUpperCase(),
@@ -188,7 +255,6 @@ export const sellStock = async (req, res, next) => {
       balanceAfter: user.cashBalance,
     });
 
-    // Add settlement job to queue
     await addSettlementJob({
       userId:  req.user._id.toString(),
       tradeId: trade._id.toString(),
@@ -289,6 +355,45 @@ export const getTradeStats = async (req, res, next) => {
     res.status(200).json({
       success: true,
       stats: { ...stats, winRate: parseFloat(((stats.winningTrades / (stats.totalSells || 1)) * 100).toFixed(2)) },
+    });
+  } catch (err) { next(err); }
+};
+
+/* ============================================================
+   GET MARKET STATUS — GET /api/trades/market-status
+   ============================================================ */
+export const getMarketStatus = async (req, res, next) => {
+  try {
+    const { open, day, time, ist } = isMarketOpen();
+    const message = open ? "Market is open for trading." : getMarketStatusMessage(day, time);
+
+    const OPEN  = 9  * 60 + 15;
+    const CLOSE = 15 * 60 + 30;
+
+    // Next open time in IST
+    let nextOpen = null;
+    if (!open) {
+      const nextOpenDate = new Date(ist);
+      if (time >= CLOSE || day === 0 || day === 6) {
+        // Move to next weekday
+        const daysUntilMonday = day === 5 ? 3 : day === 6 ? 2 : 1;
+        nextOpenDate.setDate(nextOpenDate.getDate() + (time >= CLOSE ? 1 : daysUntilMonday));
+      }
+      nextOpenDate.setHours(9, 15, 0, 0);
+      nextOpen = nextOpenDate.toISOString();
+    }
+
+    res.status(200).json({
+      success: true,
+      market: {
+        isOpen:    open,
+        message,
+        openTime:  "9:15 AM IST",
+        closeTime: "3:30 PM IST",
+        timezone:  "Asia/Kolkata",
+        nextOpen,
+        currentISTTime: ist.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }),
+      },
     });
   } catch (err) { next(err); }
 };
