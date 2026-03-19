@@ -3,9 +3,7 @@ import Stock      from "../Models/Stock.js";
 import { addPredictionJob } from "../Queue/prediction.queue.js";
 
 /* ============================================================
-   REQUEST PREDICTION
-   POST /api/predict
-   Now uses BullMQ queue instead of direct axios call
+   REQUEST PREDICTION — POST /api/predict
    ============================================================ */
 export const requestPrediction = async (req, res, next) => {
   try {
@@ -41,14 +39,37 @@ export const requestPrediction = async (req, res, next) => {
       symbol:      sym,
       status:      "COMPLETED",
       completedAt: { $gte: oneHourAgo },
+       predictedPrice: { $gt: 0 },
     }).sort({ completedAt: -1 });
 
     if (cached) {
-      return res.status(200).json({
-        success:    true,
-        cached:     true,
-        message:    "Returning recent prediction (cached within 1 hour).",
-        prediction: cached,
+      // ✅ Emit socket event so frontend receives it — same as fresh prediction
+      setTimeout(() => {
+        global.io?.to(`user:${req.user._id}`).emit("prediction:ready", {
+          predictionId:   cached._id,
+          symbol:         cached.symbol,
+          status:         "COMPLETED",
+          predictedPrice: cached.predictedPrice,
+          currentPrice:   cached.currentPrice,
+          trend:          cached.trend,
+          pctChange:      cached.pctChange,
+          confidence:     cached.confidence,
+          modelUsed:      cached.modelUsed,
+          rmse:           cached.rmse,
+          r2:             cached.r2,
+          companyName:    cached.companyName ?? sym,
+          createdAt:      cached.completedAt ?? cached.createdAt,
+        });
+      }, 500); // small delay so frontend has time to register listener
+
+      // ✅ Return 202 so frontend waits for socket (not 200)
+      return res.status(202).json({
+        success:      true,
+        cached:       true,
+        message:      `Prediction job queued for ${sym}. You will be notified when ready.`,
+        predictionId: cached._id,
+        status:       "PENDING",
+        listenFor:    "prediction:ready",
       });
     }
 
@@ -62,7 +83,6 @@ export const requestPrediction = async (req, res, next) => {
     });
 
     // ── Add job to BullMQ queue (non-blocking) ────────────
-    // prediction.worker.js will pick this up and call ML service
     await addPredictionJob({
       predictionId: prediction._id.toString(),
       symbol:       sym,
@@ -70,13 +90,12 @@ export const requestPrediction = async (req, res, next) => {
     });
 
     // ── Return 202 Accepted immediately ───────────────────
-    // Frontend should listen for "prediction:ready" Socket.IO event
     res.status(202).json({
       success:      true,
       message:      `Prediction job queued for ${sym}. You will be notified when ready.`,
       predictionId: prediction._id,
       status:       "PENDING",
-      listenFor:    "prediction:ready", // tells frontend what Socket.IO event to listen for
+      listenFor:    "prediction:ready",
     });
 
   } catch (err) {
@@ -85,8 +104,7 @@ export const requestPrediction = async (req, res, next) => {
 };
 
 /* ============================================================
-   GET MY PREDICTIONS
-   GET /api/predict/history
+   GET MY PREDICTIONS — GET /api/predict/history
    ============================================================ */
 export const getMyPredictions = async (req, res, next) => {
   try {
@@ -96,7 +114,6 @@ export const getMyPredictions = async (req, res, next) => {
     if (symbol) query.symbol = symbol.toUpperCase();
     if (status) query.status = status.toUpperCase();
 
-    const skip        = (parseInt(page) - 1) * parseInt(limit);
     const total       = await Prediction.countDocuments(query);
     const predictions = await Prediction.getHistory(req.user._id, parseInt(limit));
 
@@ -114,8 +131,7 @@ export const getMyPredictions = async (req, res, next) => {
 };
 
 /* ============================================================
-   GET SINGLE PREDICTION
-   GET /api/predict/:id
+   GET SINGLE PREDICTION — GET /api/predict/:id
    ============================================================ */
 export const getPrediction = async (req, res, next) => {
   try {
@@ -133,8 +149,7 @@ export const getPrediction = async (req, res, next) => {
 };
 
 /* ============================================================
-   GET LATEST PREDICTION FOR A SYMBOL
-   GET /api/predict/latest/:symbol
+   GET LATEST PREDICTION — GET /api/predict/latest/:symbol
    ============================================================ */
 export const getLatestPrediction = async (req, res, next) => {
   try {
@@ -154,9 +169,7 @@ export const getLatestPrediction = async (req, res, next) => {
 };
 
 /* ============================================================
-   GET TOP BULLISH PREDICTIONS
-   GET /api/predict/trending
-   Public
+   GET TRENDING PREDICTIONS — GET /api/predict/trending
    ============================================================ */
 export const getTrendingPredictions = async (req, res, next) => {
   try {
@@ -168,8 +181,7 @@ export const getTrendingPredictions = async (req, res, next) => {
 };
 
 /* ============================================================
-   GET PREDICTION USAGE
-   GET /api/predict/usage
+   GET PREDICTION USAGE — GET /api/predict/usage
    ============================================================ */
 export const getPredictionUsage = async (req, res, next) => {
   try {
@@ -187,7 +199,7 @@ export const getPredictionUsage = async (req, res, next) => {
     res.status(200).json({
       success: true,
       usage: {
-        today:     todayCount,
+        used:      todayCount,
         limit,
         remaining: Math.max(0, limit - todayCount),
         total:     totalCount,

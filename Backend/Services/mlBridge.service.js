@@ -1,9 +1,8 @@
 import axios        from "axios";
 import YahooFinance from "yahoo-finance2";
-const yahooFinance = new YahooFinance();
+
 const ML_URL = process.env.ML_SERVICE_URL || "http://localhost:5001";
 
-/* ── Check if ML service is alive ────────────────────────── */
 export const checkMLHealth = async () => {
   try {
     const res = await axios.get(`${ML_URL}/health`, { timeout: 5000 });
@@ -15,10 +14,10 @@ export const checkMLHealth = async () => {
 
 const fetchPriceHistory = async (symbol) => {
   try {
-    const yahooFinance = new YahooFinance({ suppressNotices: ['ripHistorical'] });
+    const yahooFinance = new YahooFinance({ suppressNotices: ["ripHistorical"] });
     const endDate   = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 90);
+    startDate.setDate(startDate.getDate() - 730); // ✅ 2 years of data
 
     const result = await yahooFinance.chart(symbol, {
       period1:  startDate.toISOString().split("T")[0],
@@ -41,28 +40,24 @@ const fetchPriceHistory = async (symbol) => {
   }
 };
 
-/* ── Request prediction from ML service ─────────────────── */
 export const requestMLPrediction = async (symbol) => {
-  // Fetch price history first — ML needs it
   const priceHistory = await fetchPriceHistory(symbol);
 
-  if (priceHistory.length < 10)
-    throw new Error(`Not enough price history for ${symbol}. Need at least 10 days.`);
+  if (priceHistory.length < 50)
+    throw new Error(`Not enough price history for ${symbol}. Need at least 50 days.`);
 
   const response = await axios.post(
     `${ML_URL}/predict`,
-    { symbol, priceHistory },  // ← ML expects both fields
-    { timeout: 30000 }
+    { symbol, priceHistory },
+    { timeout: 60000 } // 60s — more data needs more time
   );
 
-  // ML returns { success: true, data: { ... } }
   if (!response.data?.success)
     throw new Error(response.data?.error || "ML prediction failed");
 
-  return response.data.data; // ← unwrap nested data
+  return response.data.data;
 };
 
-/* ── Get model info ──────────────────────────────────────── */
 export const getMLModelInfo = async () => {
   try {
     const res = await axios.get(`${ML_URL}/model-info`, { timeout: 5000 });

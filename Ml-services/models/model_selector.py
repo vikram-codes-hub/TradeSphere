@@ -1,16 +1,15 @@
 """
 Model Selector
-Trains both LinearRegression and RandomForest on the same data,
-evaluates each on a held-out test set, and picks the winner (lower RMSE).
-
-This is a key interview talking point:
-  "The system auto-selects the best model per stock based on RMSE"
+Trains XGBoost, RandomForest, and LinearRegression.
+Picks winner by lowest RMSE on held-out test set.
+XGBoost wins most of the time for financial data.
 """
 
 import numpy as np
-from models.Linear_model import LinearModel
+from models.Linear_model        import LinearModel
 from models.random_forest_model import RandomForestModel
-from utils.logger import get_logger
+from models.xgboost_model       import XGBoostModel
+from utils.logger               import get_logger
 
 logger = get_logger(__name__)
 
@@ -25,64 +24,54 @@ class ModelSelector:
         y_train: np.ndarray,
         y_test:  np.ndarray,
     ) -> dict:
-        """
-        Trains both models, evaluates on test set, saves the winner.
 
-        Returns:
-        {
-          "best_model":  "RandomForest" | "LinearRegression",
-          "lr_rmse":     float,
-          "rf_rmse":     float,
-          "best_rmse":   float,
-          "best_r2":     float,
-        }
-        """
-        # ── Train both ────────────────────────────────────
-        lr = LinearModel(symbol)
-        rf = RandomForestModel(symbol)
+        lr  = LinearModel(symbol)
+        rf  = RandomForestModel(symbol)
+        xgb = XGBoostModel(symbol)
 
-        lr.train(X_train, y_train)
-        rf.train(X_train, y_train)
+        lr.train(X_train,  y_train)
+        rf.train(X_train,  y_train)
+        xgb.train(X_train, y_train)
 
-        # ── Evaluate both ─────────────────────────────────
-        lr_metrics = lr.evaluate(X_test, y_test)
-        rf_metrics = rf.evaluate(X_test, y_test)
+        lr_metrics  = lr.evaluate(X_test,  y_test)
+        rf_metrics  = rf.evaluate(X_test,  y_test)
+        xgb_metrics = xgb.evaluate(X_test, y_test)
 
-        lr_rmse = lr_metrics["rmse"]
-        rf_rmse = rf_metrics["rmse"]
+        # Pick model with lowest RMSE
+        candidates = [
+            ("LinearRegression", lr_metrics),
+            ("RandomForest",     rf_metrics),
+            ("XGBoost",          xgb_metrics),
+        ]
+        best_name, best_metrics = min(candidates, key=lambda x: x[1]["rmse"])
 
-        # ── Pick winner ───────────────────────────────────
-        if rf_rmse < lr_rmse:
-            best_name    = "RandomForest"
-            best_metrics = rf_metrics
-            logger.info(f"[{symbol}] Winner: RandomForest (RMSE {rf_rmse:.4f} vs LR {lr_rmse:.4f})")
-        else:
-            best_name    = "LinearRegression"
-            best_metrics = lr_metrics
-            logger.info(f"[{symbol}] Winner: LinearRegression (RMSE {lr_rmse:.4f} vs RF {rf_rmse:.4f})")
+        logger.info(
+            f"[{symbol}] Winner: {best_name} "
+            f"(XGB={xgb_metrics['rmse']:.2f}, RF={rf_metrics['rmse']:.2f}, LR={lr_metrics['rmse']:.2f})"
+        )
 
         return {
             "best_model": best_name,
-            "lr_rmse":    round(lr_rmse, 4),
-            "rf_rmse":    round(rf_rmse, 4),
             "best_rmse":  round(best_metrics["rmse"], 4),
-            "best_r2":    round(best_metrics["r2"], 4),
+            "best_r2":    round(best_metrics["r2"],   4),
+            "lr_rmse":    round(lr_metrics["rmse"],   4),
+            "rf_rmse":    round(rf_metrics["rmse"],   4),
+            "xgb_rmse":   round(xgb_metrics["rmse"],  4),
         }
 
-    # ─────────────────────────────────────────────────────
     def load_best(self, symbol: str):
-        """
-        Loads whichever saved model has lower RMSE metadata.
-        Falls back to RandomForest if no metadata available.
-        """
-        rf = RandomForestModel(symbol)
-        lr = LinearModel(symbol)
+        """Load whichever saved model had lowest RMSE — prefer XGBoost."""
+        xgb = XGBoostModel(symbol)
+        if xgb.exists():
+            xgb.load()
+            return xgb, "XGBoost"
 
-        # Prefer RF if both exist — it's generally stronger
+        rf = RandomForestModel(symbol)
         if rf.exists():
             rf.load()
             return rf, "RandomForest"
 
+        lr = LinearModel(symbol)
         if lr.exists():
             lr.load()
             return lr, "LinearRegression"
